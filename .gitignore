@@ -1,0 +1,20 @@
+# 构建产物（用 build_portable.ps1 生成，不入库）
+/dist/
+/build/
+*.spec
+
+# 运行时数据与测试产物
+__pycache__/
+*.pyc
+annotator_config.json
+*.zip
+*.geojson
+*.label.npy
+*_label.tif
+*_stats.csv
+
+# 性能剖析输出
+prof*.txt
+
+# 编辑器
+.vscode/

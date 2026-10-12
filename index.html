@@ -1,0 +1,2832 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>耕图 FieldLabel · 遥感影像标注</title>
+<style>
+:root{
+  --bg:#12141a; --panel:#1a1d24; --panel2:#222633; --panel3:#2a2f3d; --line:#2e3340;
+  --txt:#e9ebf1; --txt2:#98a0b3; --txt3:#6d7688;
+  --accent:#4f8cff; --accent2:#7aa8ff; --warn:#ffb454; --ok:#3ecf8e; --danger:#ff6b6b;
+  --r:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
+  font:13.5px/1.5 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased}
+#app{display:flex;height:100%;position:relative}
+
+/* ============ 工具栏 ============ */
+#toolbar{position:absolute;top:0;left:0;right:0;height:48px;display:flex;align-items:center;
+  gap:6px;padding:0 10px;background:rgba(26,29,36,.96);border-bottom:1px solid var(--line);
+  z-index:20;backdrop-filter:blur(8px)}
+#toolbar .group{display:flex;gap:4px;align-items:center;padding-right:8px;
+  border-right:1px solid var(--line);height:30px}
+#toolbar .group:last-child{border-right:none}
+#toolbar .grow{flex:1;border-right:none}
+.tb{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;
+  padding:5px 10px;font-size:12.5px;cursor:pointer;transition:.13s;white-space:nowrap;
+  user-select:none;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
+.tb:hover{border-color:var(--accent);color:#fff;background:var(--panel3)}
+.tb.active{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 0 0 1px rgba(79,140,255,.35)}
+.tb:disabled{opacity:.35;cursor:not-allowed}
+.tb.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.tb.primary:hover{background:var(--accent2)}
+.tb.flat{background:transparent;border-color:transparent}
+.tb.flat:hover{background:var(--panel2);border-color:var(--line)}
+select.tb{padding:4px 6px}
+#title{font-weight:600;font-size:13px;color:var(--accent2);max-width:210px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+
+/* ============ 类快捷条 ============ */
+#classbar{display:flex;gap:5px;align-items:center;overflow-x:auto;max-width:46vw;padding:2px 0}
+#classbar::-webkit-scrollbar{height:5px}
+#classbar::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.cchip{display:flex;align-items:center;gap:6px;padding:4px 9px;border-radius:14px;
+  border:1px solid var(--line);background:var(--panel2);cursor:pointer;font-size:12.5px;
+  white-space:nowrap;transition:.13s;user-select:none}
+.cchip:hover{border-color:var(--accent)}
+.cchip.active{border-color:#fff;background:var(--panel3);box-shadow:0 0 0 1px #fff inset}
+.cdot{width:11px;height:11px;border-radius:3px;flex:none;border:1px solid rgba(255,255,255,.35)}
+
+/* ============ 画布 ============ */
+#stage{position:relative;flex:1;overflow:hidden}
+#cv{position:absolute;inset:0;cursor:crosshair;display:block}
+#cv.mode-select{cursor:default}
+#cv.panning{cursor:grabbing}
+#cv.brush{cursor:none}
+#hint{position:absolute;left:50%;bottom:36px;transform:translateX(-50%);
+  background:rgba(18,20,26,.9);border:1px solid var(--line);border-radius:var(--r);
+  padding:6px 15px;font-size:12.5px;color:var(--txt2);z-index:15;pointer-events:none;max-width:80%}
+#hint b{color:var(--accent2)}
+#statusbar{position:absolute;left:0;right:0;bottom:0;height:26px;display:flex;align-items:center;
+  gap:16px;padding:0 12px;background:rgba(26,29,36,.96);border-top:1px solid var(--line);
+  font-size:11.5px;color:var(--txt2);z-index:15;font-variant-numeric:tabular-nums}
+#statusbar b{color:var(--txt);font-weight:600}
+#saveState{display:flex;align-items:center;gap:5px}
+#saveDot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+#saveState.dirty #saveDot{background:var(--warn)}
+#saveState.saving #saveDot{background:var(--accent);animation:pulse 1s infinite}
+#saveState.err #saveDot{background:var(--danger)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ============ 侧栏 ============ */
+#side{width:296px;background:var(--panel);border-left:1px solid var(--line);display:flex;
+  flex-direction:column;z-index:18;min-width:296px}
+.sect{border-bottom:1px solid var(--line)}
+.sect>h3{font-size:12px;padding:10px 12px 7px;color:var(--txt2);font-weight:600;
+  display:flex;justify-content:space-between;align-items:center;letter-spacing:.3px}
+.sect>h3 .cnt{color:var(--txt3);font-weight:500}
+.sect .body{padding:0 8px 9px}
+.clist{max-height:210px;overflow-y:auto}
+.crow{display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:6px;
+  cursor:pointer;border:1px solid transparent;transition:.1s;margin-bottom:3px}
+.crow:hover{background:var(--panel2)}
+.crow.active{border-color:var(--accent);background:rgba(79,140,255,.12)}
+.crow .nm{flex:1;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow .cid{font-size:10.5px;color:var(--txt3);font-variant-numeric:tabular-nums;
+  background:var(--panel2);border-radius:4px;padding:1px 5px}
+.crow.active .cid{background:var(--panel3);color:var(--txt2)}
+.crow .mini{background:none;border:none;color:var(--txt3);cursor:pointer;font-size:12px;
+  padding:2px 4px;border-radius:4px;line-height:1}
+.crow .mini:hover{background:var(--panel3);color:var(--txt)}
+.crow .mini.del:hover{color:var(--danger)}
+.crow.hiddencls{opacity:.42}
+#plist{max-height:250px;overflow-y:auto;padding:0 8px 9px}
+.prow{display:flex;align-items:center;gap:7px;padding:6px 7px;border-radius:6px;cursor:pointer;
+  border:1px solid transparent;transition:.1s;margin-bottom:3px}
+.prow:hover{background:var(--panel2)}
+.prow.sel{border-color:var(--accent);background:rgba(79,140,255,.12)}
+.prow .pid{font-weight:700;font-size:12px;color:var(--accent2);min-width:32px;font-variant-numeric:tabular-nums}
+.prow .pcls{font-size:11px;padding:1px 6px;border-radius:9px;border:1px solid var(--line);color:var(--txt2)}
+.prow .pa{flex:1;font-size:11.5px;color:var(--txt2);font-variant-numeric:tabular-nums;text-align:right}
+.empty{padding:20px 12px;color:var(--txt3);font-size:12.5px;text-align:center;line-height:1.7}
+.props{background:var(--panel2);border:1px solid var(--line);border-radius:var(--r);
+  padding:9px 10px;margin:0 8px 9px;font-size:12.5px}
+.props .ln{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+.props .ln:last-child{margin-bottom:0}
+.props label{color:var(--txt2)}
+.props select,.props input{background:var(--panel);border:1px solid var(--line);color:var(--txt);
+  border-radius:5px;padding:3px 6px;font-size:12px;font-family:inherit;max-width:150px}
+#sFoot{border-top:1px solid var(--line);padding:9px;display:flex;flex-direction:column;gap:7px}
+#sFoot .row{display:flex;gap:6px}
+#sFoot .row .tb{flex:1;justify-content:center}
+.stat{display:flex;justify-content:space-between;font-size:11.5px;color:var(--txt2);
+  padding:3px 4px;font-variant-numeric:tabular-nums}
+.stat b{color:var(--txt);font-weight:600}
+.tip{font-size:11px;color:var(--txt3);padding:2px 4px 6px;line-height:1.5}
+
+/* ============ 滑块 ============ */
+.rangeWrap{display:flex;align-items:center;gap:7px;padding:0 8px 8px}
+.rangeWrap input[type=range]{flex:1;accent-color:var(--accent);height:4px}
+.rangeWrap .val{font-size:11.5px;color:var(--txt2);min-width:44px;text-align:right;
+  font-variant-numeric:tabular-nums}
+
+/* ============ 弹窗 ============ */
+#modal{position:absolute;inset:0;background:rgba(8,9,12,.66);display:none;z-index:40;
+  align-items:center;justify-content:center;padding:28px}
+#modal.show{display:flex}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  box-shadow:0 18px 60px rgba(0,0,0,.5);width:760px;max-width:100%;max-height:100%;
+  display:flex;flex-direction:column;overflow:hidden}
+#modalHelp .box{width:600px}
+.box>header{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;
+  align-items:center;justify-content:space-between}
+.box>header h2{font-size:14px;font-weight:600}
+.box>.content{padding:13px 16px;overflow-y:auto}
+.box>.footer{padding:11px 16px;border-top:1px solid var(--line);display:flex;
+  justify-content:flex-end;gap:8px}
+.pathbar{display:flex;gap:6px;margin-bottom:9px}
+.pathbar input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+  border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:Consolas,monospace}
+.crumbs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px}
+.crumb{background:var(--panel2);border:1px solid var(--line);border-radius:12px;
+  padding:2px 9px;font-size:11.5px;color:var(--txt2);cursor:pointer}
+.crumb:hover{border-color:var(--accent);color:var(--txt)}
+.fbrowser{display:flex;gap:12px;height:340px}
+.fbrowser .col{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:var(--r);
+  overflow-y:auto;padding:5px}
+.fbrowser .col h4{font-size:11px;color:var(--txt3);padding:5px 7px;font-weight:600;letter-spacing:.4px}
+.fitem{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:6px;cursor:pointer;
+  font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fitem:hover{background:var(--panel2)}
+.fitem.sel{background:rgba(79,140,255,.18);color:#fff}
+.fitem .ic{flex:none;font-size:13px;width:15px;text-align:center}
+.fitem .sz{margin-left:auto;font-size:10.5px;color:var(--txt3);flex:none;
+  font-variant-numeric:tabular-nums}
+table.keys{width:100%;border-collapse:collapse;font-size:12.5px}
+table.keys td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+table.keys td:first-child{color:var(--accent2);white-space:nowrap;font-family:Consolas,monospace;
+  font-size:12px;width:210px}
+.legend{display:flex;align-items:center;gap:7px;margin-bottom:6px;font-size:12.5px}
+#toast{position:absolute;top:60px;left:50%;transform:translateX(-50%);background:var(--panel2);
+  border:1px solid var(--line);border-left:3px solid var(--ok);padding:8px 16px;border-radius:var(--r);
+  font-size:12.5px;z-index:50;opacity:0;transition:.22s;pointer-events:none;max-width:70%;
+  box-shadow:0 8px 26px rgba(0,0,0,.4)}
+#toast.show{opacity:1}
+#toast.err{border-left-color:var(--danger)}
+[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:5px}
+
+/* ---------- 选区工具 ---------- */
+.tb.icon{min-width:32px;justify-content:center;padding:5px 7px;font-size:14px}
+#selbar{position:absolute;left:50%;bottom:72px;transform:translateX(-50%);display:none;
+  align-items:center;gap:7px;background:rgba(18,20,26,.94);border:1px solid var(--line);
+  border-radius:10px;padding:7px 11px;z-index:16;box-shadow:0 10px 28px rgba(0,0,0,.5)}
+#selbar.show{display:flex}
+#selInfo{font-size:12px;color:var(--txt2);font-variant-numeric:tabular-nums;white-space:nowrap}
+#selInfo b{color:var(--accent2)}
+
+/* ---------- 图像处理面板 ---------- */
+#modalImg .grp{margin-bottom:14px;padding-bottom:12px;border-bottom:1px dashed var(--line)}
+#modalImg .grp:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+#modalImg h4{font-size:12.5px;color:var(--accent2);margin-bottom:9px;font-weight:600}
+#modalImg .row2{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12.5px;color:var(--txt2)}
+#modalImg .row2 label{width:56px;flex:none}
+#modalImg .row2 input[type=range]{flex:1;accent-color:var(--accent)}
+#modalImg .row2 .val2{width:38px;text-align:right;color:var(--txt);font-variant-numeric:tabular-nums}
+#modalImg .num{width:58px;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+  border-radius:5px;padding:4px 6px;font-size:12px;text-align:center}
+#modalImg .wide{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+  border-radius:6px;padding:6px 9px;font:12.5px Consolas,monospace;min-width:0}
+#modalImg .chips{display:flex;gap:6px;flex-wrap:wrap}
+#modalImg .tip{font-size:11px;color:var(--txt3);margin-top:7px;line-height:1.55}
+
+/* ---------- 多人协作 ---------- */
+#userbar{display:flex;align-items:center;gap:4px;padding:2px 6px;background:rgba(18,20,26,.7);
+  border:1px solid var(--line);border-radius:14px;max-width:230px;overflow:hidden}
+#userbar .uav{position:relative;width:22px;height:22px;border-radius:50%;flex:none;
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  color:#0c0e12;cursor:default;box-shadow:0 0 0 1.5px rgba(255,255,255,.18)}
+#userbar .uav.me{box-shadow:0 0 0 1.5px var(--accent)}
+#userbar .uav .dot{position:absolute;right:-1px;bottom:-1px;width:7px;height:7px;border-radius:50%;
+  background:#3ecf8e;border:1.5px solid #14161c}
+#userbar .ucnt{font-size:11px;color:var(--txt2);white-space:nowrap;padding-left:2px}
+#userbar .ufirst{font-size:11px;color:var(--txt3);padding:0 4px}
+.rcursor{position:absolute;pointer-events:none;z-index:14;transition:left .9s linear,top .9s linear}
+.rcursor .ring{width:16px;height:16px;border-radius:50%;border:2.5px solid currentColor;
+  transform:translate(-50%,-50%);box-shadow:0 0 6px rgba(0,0,0,.6)}
+.rcursor .rlb{position:absolute;left:12px;top:8px;font-size:10.5px;font-weight:700;
+  padding:1px 6px;border-radius:8px;background:currentColor;color:#0c0e12;white-space:nowrap;
+  box-shadow:0 3px 10px rgba(0,0,0,.45)}
+.rcursor .rlb span{color:#0c0e12}
+#evtlog{position:absolute;right:10px;top:52px;width:238px;display:flex;flex-direction:column;
+  gap:5px;z-index:13;pointer-events:none}
+#evtlog .ev{font-size:11.5px;color:var(--txt2);background:rgba(18,20,26,.9);
+  border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:7px;
+  padding:5px 9px;animation:evin .25s ease;opacity:1;transition:opacity .5s}
+#evtlog .ev.fade{opacity:0}
+@keyframes evin{from{transform:translateX(16px);opacity:0}to{transform:none;opacity:1}}
+#modalUser .ucolors{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
+#modalUser .ucolors i{width:24px;height:24px;border-radius:50%;cursor:pointer;
+  display:inline-block;border:2px solid transparent}
+#modalUser .ucolors i.on{border-color:#fff;transform:scale(1.12)}
+
+/* ---------- 笔刷右键面板 ---------- */
+#brushpop{position:absolute;z-index:30;display:none;background:rgba(18,20,26,.96);
+  border:1px solid var(--line);border-radius:11px;padding:11px 13px;width:230px;
+  box-shadow:0 14px 36px rgba(0,0,0,.55)}
+#brushpop h5{font-size:11.5px;color:var(--accent2);margin:0 0 7px;font-weight:600}
+#brushpop .bprow{display:flex;align-items:center;gap:7px;margin-bottom:8px;font-size:12px;color:var(--txt2)}
+#brushpop .bprow input[type=range]{flex:1;accent-color:var(--accent)}
+#brushpop .bprow .val{width:46px;text-align:right;color:var(--txt);font-variant-numeric:tabular-nums}
+#brushpop .bpchips{display:flex;gap:5px;flex-wrap:wrap}
+#brushpop .bpchip{font-size:11.5px;padding:3px 9px;border-radius:9px;cursor:pointer;
+  background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--txt2)}
+#brushpop .bpchip.active{border-color:var(--accent);color:var(--txt);background:rgba(79,140,255,.16)}
+#brushpop .bptip{font-size:10.5px;color:var(--txt3);margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+
+    <div id="toolbar">
+      <span id="title">未打开影像</span>
+      <div class="group">
+        <button class="tb primary" id="btnOpen" title="浏览磁盘选择影像">📂 打开文件</button>
+      </div>
+      <div class="group">
+        <button class="tb active" id="mSelect" title="选择/编辑 (V)">▣ 选择</button>
+        <button class="tb" id="mDraw" title="多边形绘制 (P)">✎ 多边形</button>
+        <button class="tb" id="mBrush" title="涂抹笔刷 (B)">🖌 涂抹</button>
+        <button class="tb" id="mErase" title="橡皮擦 (E)">⌫ 橡皮</button>
+      </div>
+      <div class="group">
+        <button class="tb icon" id="mRect" title="矩形选框 (R)，Shift=正方形">▭</button>
+        <button class="tb icon" id="mEllipse" title="椭圆选框 (O)，Shift=正圆">◯</button>
+        <button class="tb icon" id="mLasso" title="自由套索 (L)，按住拖动画轮廓">∿</button>
+        <button class="tb icon" id="mWand" title="魔棒 (W)，单击选相似区域，右侧调容差">✦</button>
+        <button class="tb icon" id="mText" title="文本标注 (T)，点击画面放置文字，双击编辑">T</button>
+      </div>
+      <div class="group">
+        <button class="tb" id="btnUndo" title="撤销 (Ctrl+Z)">↶</button>
+        <button class="tb" id="btnRedo" title="重做 (Ctrl+Y)">↷</button>
+        <button class="tb" id="btnDel" title="删除选中田块 (Delete)">✕ 删除</button>
+      </div>
+      <div class="group">
+        <select class="tb" id="combo" title="波段组合">
+          <option value="true">真彩色</option>
+          <option value="false">假彩色 (NIR)</option>
+          <option value="ndvi">NDVI</option>
+          <option value="ndwi">NDWI</option>
+          <option value="ndbi">NDBI</option>
+          <option value="custom">自定义波段式</option>
+          <option value="gray">灰度</option>
+        </select>
+        <select class="tb" id="bandSel" title="灰度波段" style="display:none"></select>
+        <label class="tb" id="lblOverlay" title="显示/隐藏标签图层" style="cursor:pointer">
+          <input type="checkbox" id="ovShow" checked style="accent-color:var(--accent)"> 标签图层
+        </label>
+      </div>
+      <div class="group">
+        <button class="tb" id="btnSave" title="立即保存 (Ctrl+S)">💾 保存</button>
+        <button class="tb" id="btnGeo" title="下载 GeoJSON">⤓ GeoJSON</button>
+        <button class="tb" id="btnTif" title="导出标签 GeoTIFF">⤓ 标签TIFF</button>
+        <button class="tb" id="btnCsv" title="导出类别统计 CSV">⤓ 统计</button>
+      </div>
+      <div class="group grow" style="justify-content:flex-end">
+        <div id="userbar" title="在线用户（点击修改昵称与颜色）" role="button" tabindex="0">
+          <span class="ufirst">单机</span>
+        </div>
+        <button class="tb" id="btnImg" title="图像处理：亮度/对比度/锐化/白平衡/裁剪/旋转/多光谱 (I)">🎛 图像处理</button>
+        <button class="tb" id="btnHelp" title="快捷键 (H)">?</button>
+      </div>
+    </div>
+
+    <div id="evtlog"></div>
+
+    <div id="hint">点击「打开文件」选择影像，或按 <b>P</b> 开始绘制多边形</div>
+
+    <div id="selbar">
+      <span id="selInfo">选区 0 px</span>
+      <button class="tb primary" id="selToParcel" title="把选区转成带类别的田块多边形">⇢ 转为田块</button>
+      <button class="tb" id="selToMask" title="把选区按当前类别涂进标签图">🖌 涂进当前类别</button>
+      <button class="tb" id="selClear" title="取消选区 (Esc)">✕ 取消</button>
+    </div>
+
+    <div id="statusbar">
+      <span>经度 <b id="sLon">-</b></span>
+      <span>纬度 <b id="sLat">-</b></span>
+      <span>缩放 <b id="sZoom">-</b></span>
+      <span>田块 <b id="sCount">0</b></span>
+      <span>已涂 <b id="sPaint">0</b> px</span>
+      <span>选区 <b id="sSel">-</b></span>
+      <span id="saveState"><i id="saveDot"></i><b id="sSave">就绪</b></span>
+      <span style="margin-left:auto" id="sFile">-</span>
+    </div>
+
+    <div id="toast"></div>
+
+    <!-- 文件浏览器 -->
+    <div id="modalFile" class="modalhost" style="position:absolute;inset:0;background:rgba(8,9,12,.66);
+      display:none;z-index:40;align-items:center;justify-content:center;padding:28px">
+      <div class="box">
+        <header><h2>选择要标注的影像</h2>
+          <button class="tb" id="fileClose">关闭</button></header>
+        <div class="content">
+          <div class="pathbar">
+            <button class="tb" id="btnUp">↑ 上级</button>
+            <button class="tb" id="btnHome">🏠 用户目录</button>
+            <input id="pathInput" placeholder="直接输入路径后回车，例如 D:\UNET" spellcheck="false">
+            <button class="tb" id="btnGo">转到</button>
+          </div>
+          <div class="crumbs" id="crumbs"></div>
+          <div class="fbrowser">
+            <div class="col" style="flex:.85"><h4>文件夹</h4><div id="dirList"></div></div>
+            <div class="col" style="flex:1.15"><h4>影像文件</h4><div id="fileList"></div></div>
+          </div>
+          <div class="tip" id="fileTip">支持 GeoTIFF / IMG / VRT / PNG / JPG 等。双击文件夹进入，双击影像打开。</div>
+        </div>
+        <div class="footer">
+          <span id="filePicked" style="margin-right:auto;color:var(--txt2);font-size:12px;
+            align-self:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%"></span>
+          <button class="tb" id="fileCancel">取消</button>
+          <button class="tb primary" id="fileConfirm" disabled>打开所选影像</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 类别编辑 -->
+    <div id="modalClass" style="position:absolute;inset:0;background:rgba(8,9,12,.66);display:none;
+      z-index:41;align-items:center;justify-content:center;padding:28px">
+      <div class="box" style="width:420px">
+        <header><h2 id="clsTitle">新增类别</h2></header>
+        <div class="content">
+          <div class="ln" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <label style="color:var(--txt2)">类别 ID</label>
+            <input id="clsId" type="number" min="1" max="255" style="background:var(--bg);
+              border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:6px 9px;width:110px">
+          </div>
+          <div class="ln" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <label style="color:var(--txt2)">名称</label>
+            <input id="clsName" style="background:var(--bg);border:1px solid var(--line);color:var(--txt);
+              border-radius:6px;padding:6px 9px;width:240px">
+          </div>
+          <div class="ln" style="display:flex;justify-content:space-between;align-items:center">
+            <label style="color:var(--txt2)">颜色</label>
+            <input id="clsColor" type="color" style="width:70px;height:32px;background:none;
+              border:1px solid var(--line);border-radius:6px;cursor:pointer">
+          </div>
+        </div>
+        <div class="footer">
+          <button class="tb" id="clsCancel">取消</button>
+          <button class="tb primary" id="clsOk">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 图像处理 -->
+    <div id="modalImg" style="position:absolute;inset:0;background:rgba(8,9,12,.66);display:none;
+      z-index:43;align-items:center;justify-content:center;padding:24px">
+      <div class="box" style="width:560px">
+        <header><h2>🎛 图像处理</h2><button class="tb" id="imgClose">关闭</button></header>
+        <div class="content">
+          <div class="grp">
+            <h4>显示调整（实时预览，仅影响观看效果，不改原数据）</h4>
+            <div class="row2"><label>亮度</label><input type="range" id="aBright" min="0.5" max="1.5" step="0.05" value="1"><span class="val2" id="vBright">1.00</span></div>
+            <div class="row2"><label>对比度</label><input type="range" id="aContrast" min="0.5" max="2" step="0.05" value="1"><span class="val2" id="vContrast">1.00</span></div>
+            <div class="row2"><label>饱和度</label><input type="range" id="aSat" min="0" max="2" step="0.05" value="1"><span class="val2" id="vSat">1.00</span></div>
+            <div class="row2"><label>锐化</label><input type="range" id="aSharp" min="0" max="2" step="0.1" value="0"><span class="val2" id="vSharp">0.0</span></div>
+            <div class="row2"><label>Gamma</label><input type="range" id="aGamma" min="0.5" max="2" step="0.05" value="1"><span class="val2" id="vGamma">1.00</span></div>
+            <div class="row2"><label>光平衡</label><input type="checkbox" id="aWb" style="accent-color:var(--accent)"><span>灰度世界白平衡，一键校正整体色偏</span></div>
+            <div class="row2"><label>拉伸范围</label><input type="number" id="aLo" class="num" min="0" max="99" value="2">% ~ <input type="number" id="aHi" class="num" min="1" max="100" value="98">%<span style="font-size:11px;color:var(--txt3)">百分位线性拉伸</span></div>
+            <div class="chips"><button class="tb" id="aReset">↺ 重置显示调整</button></div>
+          </div>
+          <div class="grp">
+            <h4>多光谱 · 自定义波段表达式</h4>
+            <div class="row2" style="margin-bottom:0">
+              <input class="wide" id="exprInput" placeholder="例: (b4-b3)/(b4+b3)   （b1..b6 = 波段1..6）" spellcheck="false">
+              <button class="tb" id="exprApply">应用</button>
+            </div>
+            <div class="chips" style="margin-top:8px">
+              <button class="tb" data-expr="(b4-b3)/(b4+b3)">NDVI</button>
+              <button class="tb" data-expr="(b2-b4)/(b2+b4)">NDWI</button>
+              <button class="tb" data-expr="(b5-b4)/(b5+b4)">NDBI</button>
+              <button class="tb" data-expr="">清空表达式</button>
+            </div>
+            <div class="tip">应用后把顶部「波段组合」切到<b>自定义波段式</b>查看。支持 np 函数：sqrt / log / exp / abs / clip / where 等。</div>
+          </div>
+          <div class="grp">
+            <h4>几何变换（生成新文件并打开，原文件与原标注不受影响）</h4>
+            <div class="chips">
+              <button class="tb" id="gCrop">✂ 裁剪到当前选区</button>
+              <button class="tb" id="gRot90">↻ 顺时针 90°</button>
+              <button class="tb" id="gRot90ccw">↺ 逆时针 90°</button>
+              <button class="tb" id="gRot180">⇄ 旋转 180°</button>
+              <button class="tb" id="gFlipH">⇋ 水平翻转</button>
+              <button class="tb" id="gFlipV">⇅ 垂直翻转</button>
+            </div>
+            <div class="tip">裁剪取当前选区的<b>外接矩形</b>（矩形/椭圆/套索/魔棒选区均可）；旋转与翻转会把现有田块、涂抹、文本标注一起换算到新坐标。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 帮助 -->
+    <div id="modalHelp" style="position:absolute;inset:0;background:rgba(8,9,12,.66);display:none;
+      z-index:42;align-items:center;justify-content:center;padding:28px">
+      <div class="box">
+        <header><h2>快捷键与操作</h2><button class="tb" id="helpClose">关闭</button></header>
+          <div class="content">
+            <table class="keys">
+            <tr><td>V / P / B / E</td><td>选择 / 多边形 / 涂抹笔刷 / 橡皮擦</td></tr>
+            <tr><td>R / O / L / W</td><td>矩形选框 / 椭圆选框 / 自由套索 / 魔棒（PS 同款选择工具）</td></tr>
+            <tr><td>Shift（拖选框时）</td><td>约束为正方形 / 正圆</td></tr>
+            <tr><td>选区之后</td><td>点「转为田块」或「涂进当前类别」；Esc / Delete 取消选区</td></tr>
+            <tr><td>T</td><td>文本标注：点击放置文字，拖动移动，双击编辑，Delete 删除</td></tr>
+            <tr><td>I / 🎛 图像处理</td><td>亮度/对比度/饱和度/锐化/Gamma/白平衡/拉伸范围、裁剪旋转翻转、多光谱表达式</td></tr>
+            <tr><td>波段组合</td><td>真彩色 / 假彩色 / NDVI / NDWI / NDBI / 自定义波段式 / 灰度</td></tr>
+            <tr><td>1 … 9</td><td>切换当前类别（快捷键切换后，绘制的对象属于该类）</td></tr>
+            <tr><td>[ / ]</td><td>减小 / 增大笔刷尺寸</td></tr>
+            <tr><td>Alt + 滚轮</td><td>无级调整笔刷大小（不缩放影像）</td></tr>
+            <tr><td>Alt + 单击</td><td>从标签图吸取类别（吸管）</td></tr>
+            <tr><td>右键（涂抹模式）</td><td>弹出笔刷面板：调大小、快速换类别</td></tr>
+            <tr><td>左键（涂抹）</td><td>按住拖动即可涂抹；单击即点一个圆点（点划标注）</td></tr>
+            <tr><td>左键（多边形）</td><td>逐点单击，右键 / 回车 / 双击 / 点起点 闭合</td></tr>
+            <tr><td>选择模式单击</td><td>选中田块；拖顶点改形状；点边中点 ○ 插点</td></tr>
+            <tr><td>中键 / 空格+拖 / 右键拖</td><td>平移影像</td></tr>
+            <tr><td>滚轮</td><td>以光标为中心缩放</td></tr>
+            <tr><td>Ctrl+Z / Ctrl+Y</td><td>撤销 / 重做（矢量与涂抹共用一条历史）</td></tr>
+            <tr><td>Delete</td><td>删除选中田块；涂抹模式下拉矩形框选忽略</td></tr>
+            <tr><td>Ctrl+S</td><td>立即保存（默认已开启自动保存）</td></tr>
+            <tr><td>F</td><td>视野缩放到全部田块</td></tr>
+            <tr><td>H / ?</td><td>本帮助</td></tr>
+            <tr><td>多人协作</td><td>同一地址多台电脑打开即自动组队：顶部头像=在线成员，远程光标实时可见；涂抹撤销只撤自己的，矢量按要素增量合并互不覆盖</td></tr>
+          </table>
+          <div class="tip" style="margin-top:10px">
+            保存位置：矢量 → 影像同目录 <b>*.parcels.geojson</b>；标签图 → <b>*.label.npy</b>（0=背景，1..N=类别），
+            与既有 outputs/label_*.npy 格式一致，可直接用于训练。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 协作身份 -->
+    <div id="modalUser" style="position:absolute;inset:0;background:rgba(8,9,12,.66);display:none;
+      z-index:44;align-items:center;justify-content:center;padding:28px">
+      <div class="box" style="width:380px">
+        <header><h2 id="userTitle">协作身份</h2></header>
+        <div class="content">
+          <div class="ln" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <label style="color:var(--txt2)">昵称</label>
+            <input id="userName" maxlength="16" placeholder="例如：张三"
+              style="background:var(--bg);border:1px solid var(--line);color:var(--txt);
+              border-radius:6px;padding:6px 9px;width:220px">
+          </div>
+          <div class="ln" style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+            <label style="color:var(--txt2);padding-top:4px">颜色</label>
+            <div class="ucolors" id="userColors"></div>
+          </div>
+          <div class="tip" style="font-size:11px;color:var(--txt3);line-height:1.6">
+            多人协作：同一地址在多台电脑打开即可。昵称与颜色会显示在顶部头像、远程光标与事件提示中；
+            涂抹撤销只撤销<b>自己</b>的笔画，矢量保存按要素增量合并，互不覆盖。
+          </div>
+        </div>
+        <div class="footer">
+          <button class="tb" id="userSkip">跳过</button>
+          <button class="tb primary" id="userOk">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 笔刷右键面板 -->
+    <div id="brushpop">
+      <h5>笔刷</h5>
+      <div class="bprow">
+        <span>大小</span>
+        <input type="range" id="bpSize" min="1" max="300" value="14">
+        <span class="val" id="bpVal">14 px</span>
+      </div>
+      <div class="bprow" style="margin-bottom:6px"><span>类别</span></div>
+      <div class="bpchips" id="bpClasses"></div>
+      <div class="bptip">Alt+滚轮 调大小 · Alt+单击 从图上吸取类别<br>Esc 关闭面板</div>
+    </div>
+  </div>
+
+  <div id="side">
+    <div class="sect">
+      <h3>类别 <span class="cnt" id="clsCnt"></span>
+        <button class="tb flat" id="btnAddCls" title="新增类别" style="padding:2px 7px">＋</button></h3>
+      <div class="body"><div class="clist" id="clist">
+        <div class="empty">暂无类别</div></div></div>
+      <div class="rangeWrap">
+        <span style="font-size:11.5px;color:var(--txt2)">笔刷</span>
+        <input type="range" id="brushSize" min="1" max="300" value="14">
+        <span class="val" id="brushVal">14 px</span>
+      </div>
+      <div class="rangeWrap" id="wandWrap" style="display:none">
+        <span style="font-size:11.5px;color:var(--txt2)">容差</span>
+        <input type="range" id="wandTol" min="1" max="100" value="30">
+        <span class="val" id="wandTolVal">30</span>
+      </div>
+    </div>
+
+    <div class="sect" style="flex:1;display:flex;flex-direction:column;min-height:0">
+      <h3>田块 <span class="cnt" id="hCount">0</span></h3>
+      <div class="props" id="props" style="display:none">
+        <div class="ln"><label>选中田块</label><b id="pId">-</b></div>
+        <div class="ln"><label>所属类别</label>
+          <select id="pCls"></select></div>
+        <div class="ln"><label>面积</label><span id="pArea">-</span></div>
+      </div>
+      <div id="plist" style="flex:1;max-height:none;overflow-y:auto">
+        <div class="empty">暂无田块<br>按 <b>P</b> 绘制多边形</div></div>
+    </div>
+
+    <div class="sect">
+      <h3>统计</h3>
+      <div class="body" id="stats" style="max-height:170px;overflow-y:auto"></div>
+    </div>
+
+    <div class="sect">
+      <h3>文本标注 <span class="cnt" id="hText">0</span></h3>
+      <div class="body"><div id="tlist" style="max-height:118px;overflow-y:auto">
+        <div class="empty" style="padding:10px 6px">按 <b>T</b> 然后点击画面添加文字</div>
+      </div></div>
+    </div>
+
+    <div id="sFoot">
+      <label class="tb" style="justify-content:center;cursor:pointer">
+        <input type="checkbox" id="autosave" checked style="accent-color:var(--accent)"> 自动保存
+      </label>
+      <div class="row">
+        <button class="tb" id="btnFit">视野全部 (F)</button>
+        <button class="tb" id="btnBake" title="把多边形按其类别栅格化进标签图">田块→标签图</button>
+      </div>
+      <div class="row">
+        <button class="tb" id="btnClearVec">清空田块</button>
+        <button class="tb" id="btnClearMask">清空涂抹</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ==================================================================
+   全局状态
+================================================================== */
+let INFO = null, AFFINE = null, INV = null;
+let CLASSES = [];                 // [{id,name,color,hidden}]
+let activeCls = 1;
+let parcels = [];                 // [{id, cls, pts:[[x,y]...]}]
+let sel = -1;
+let mode = "select";              // select | draw | brush | erase
+let combo = "true", grayBand = 1;
+let ovShow = true;
+let brushSize = 14;
+let autosave = true;
+
+let view = {scale: 1, ox: 0, oy: 0};
+let drawing = null;
+let stroke = null;                // 涂抹中的笔画 {erase, cls, size, pts:[], }
+let hover = null, drag = null, spaceDown = false;
+
+/* PS 风格选区 */
+let selRegion = null;             // {kind:'rect'|'ellipse'|'lasso'|'poly', ...}
+let marquee = null;               // 矩形/椭圆拖拽中
+let lassoPts = null;              // 套索进行中
+let wandTol = 30;
+let wandBusy = false;
+
+/* 文本标注 */
+let texts = [];                   // {id, x, y, cls, text}
+let selText = -1;
+let textEditor = null;
+
+/* 图像处理（显示调整）参数镜像 */
+let ADJ = {brightness:1, contrast:1, saturation:1, gamma:1, sharpen:0,
+           wb:0, lo:2, hi:98, expr:""};
+
+let vecDirty = false;
+let actions = [];                 // 已执行的操作 {type:'vector'|'mask'}
+let redoActions = [];             // 已撤销的操作
+let vecUndo = [], vecRedo = [];   // 客户端矢量数据快照
+let maskCanUndo = false, maskCanRedo = false;
+
+const baseCache = new Map();      // key -> Image
+const basePending = new Set();
+let ovCache = new Map();          // key -> {img, ver}
+let ovPending = new Set();
+let ovVer = 0;
+let tileSeq = 0;
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+let mouse = null;
+
+/* ---- 多人协作状态 ---- */
+const UCOLORS = ["#4f8cff","#3ecf8e","#ffb454","#f472b6","#a78bfa","#22d3ee","#ef4444","#eab308"];
+let ME = null;                     // {id, name, color}
+let RUSERS = [];                   // 服务端在线用户（含自己）
+let seq = 0, collabInited = false, collabBusy = false;
+let vecRev = 0;                    // 服务端矢量修订号
+let pendingRemote = false;         // 本地有未保存改动时远端又更新了
+let maskRefTimer = null;
+let brushPopOpen = false;
+let bpLastPos = null;               // 右键笔刷面板上次打开坐标
+
+const $ = id => document.getElementById(id);
+
+/* ==================================================================
+   工具函数
+================================================================== */
+function toast(msg, err){
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = err ? "show err" : "show";
+  clearTimeout(t._h);
+  t._h = setTimeout(()=>{ t.className = ""; }, 2800);
+}
+function clsById(id){ return CLASSES.find(c => c.id === +id) || null; }
+function clsColor(id){ const c = clsById(id); return c ? c.color : "#888888"; }
+function clsName(id){ const c = clsById(id); return c ? c.name : ("类别" + id); }
+function hex2rgb(h){
+  h = (h||"#888888").replace("#","");
+  if(h.length === 3) h = h.split("").map(x=>x+x).join("");
+  return [parseInt(h.slice(0,2),16)||0, parseInt(h.slice(2,4),16)||0, parseInt(h.slice(4,6),16)||0];
+}
+function rgba(id, a){ const [r,g,b] = hex2rgb(clsColor(id)); return `rgba(${r},${g},${b},${a})`; }
+function nextId(){ return parcels.reduce((m,p)=>Math.max(m,p.id),0) + 1; }
+function fmtSize(n){
+  if(n > 1048576) return (n/1048576).toFixed(1) + " MB";
+  if(n > 1024) return (n/1024).toFixed(0) + " KB";
+  return n + " B";
+}
+function geoFromImg(x,y){
+  return [AFFINE[0]*x + AFFINE[1]*y + AFFINE[2], AFFINE[3]*x + AFFINE[4]*y + AFFINE[5]];
+}
+function imgFromGeo(lon,lat){
+  const dx = lon - AFFINE[2], dy = lat - AFFINE[5];
+  return [INV[0]*dx + INV[1]*dy, INV[2]*dx + INV[3]*dy];
+}
+function computeInv(){
+  const a = AFFINE[0], b = AFFINE[1], d = AFFINE[3], e = AFFINE[4];
+  const det = a*e - b*d;
+  INV = Math.abs(det) < 1e-18 ? [1,0,0,1] : [e/det, -b/det, -d/det, a/det];
+}
+function areaHa(pts){
+  if(pts.length < 3) return 0;
+  /* 先转到影像的地理/投影坐标，再做平面面积换算 */
+  const g = pts.map(([x,y]) => geoFromImg(x,y));
+  let s = 0;
+  for(let i=0;i<g.length;i++){
+    const [x1,y1] = g[i], [x2,y2] = g[(i+1)%g.length];
+    s += x1*y2 - x2*y1;
+  }
+  s = Math.abs(s)/2;
+  if(INFO && INFO.is_geographic){
+    let cy = 0;
+    for(const p of g) cy += p[1];
+    cy /= g.length;
+    const mLon = 111320*Math.cos(cy*Math.PI/180), mLat = 110540;
+    return s*mLon*mLat/10000;      /* 度² -> m² -> ha */
+  }
+  return s/10000;                  /* 投影坐标按米 */
+}
+function toScr(p){ return [p[0]*view.scale + view.ox, p[1]*view.scale + view.oy]; }
+function toImg(sx,sy){ return [(sx - view.ox)/view.scale, (sy - view.oy)/view.scale]; }
+
+/* ==================================================================
+   历史（矢量客户端 / 涂抹服务端，统一顺序栈）
+================================================================== */
+function snapVec(){ vecUndo.push(JSON.stringify({p:parcels, t:texts})); if(vecUndo.length > 80) vecUndo.shift(); vecRedo.length = 0; }
+function snapNow(){ return JSON.stringify({p:parcels, t:texts}); }
+function parseSnap(s){
+  const o = JSON.parse(s);
+  if(Array.isArray(o)) return {p:o, t:[]};          // 兼容旧格式
+  return {p:(o.p||[]), t:(o.t||[])};
+}
+function pushAction(t){
+  actions.push({type:t});
+  if(actions.length > 300) actions.shift();
+  redoActions = [];
+  updateHistoryButtons();
+}
+function updateHistoryButtons(){
+  const canU = actions.length > 0;
+  const canR = redoActions.length > 0;
+  $("btnUndo").disabled = !canU;
+  $("btnRedo").disabled = !canR;
+}
+async function undo(){
+  if(!actions.length){ toast("没有可撤销的操作"); return; }
+  const a = actions.pop();
+  if(a.type === "mask"){
+    try{ const j = await api("/mask_undo", {}); applyMaskStats(j.stats); bumpOverlay(); }
+    catch(e){ toast("撤销失败: " + e.message, true); actions.push(a); return; }
+  } else {
+    if(!vecUndo.length) return;
+    vecRedo.push(snapNow());
+    const o = parseSnap(vecUndo.pop());
+    parcels = o.p; texts = o.t;
+    sel = -1; selText = -1;
+    setVecDirty(true); refreshAll(); render();
+  }
+  redoActions.push(a);
+  updateHistoryButtons();
+}
+async function redo(){
+  if(!redoActions.length){ toast("没有可重做的操作"); return; }
+  const a = redoActions.pop();
+  if(a.type === "mask"){
+    try{ const j = await api("/mask_redo", {}); applyMaskStats(j.stats); bumpOverlay(); }
+    catch(e){ toast("重做失败: " + e.message, true); redoActions.push(a); return; }
+  } else {
+    if(!vecRedo.length) return;
+    vecUndo.push(snapNow());
+    const o = parseSnap(vecRedo.pop());
+    parcels = o.p; texts = o.t;
+    sel = -1; selText = -1;
+    setVecDirty(true); refreshAll(); render();
+  }
+  actions.push(a);
+  updateHistoryButtons();
+}
+
+/* ==================================================================
+   瓦片
+================================================================== */
+function neededZ(){
+  const lz = Math.log2(view.scale);
+  return Math.max(-8, Math.min(6, Math.round(lz)));
+}
+function baseKey(z,x,y){ return z+"/"+x+"/"+y+"/"+combo+"/"+grayBand; }
+function ovKey(z,x,y){ return z+"/"+x+"/"+y; }
+
+function fetchBase(z,x,y){
+  const key = baseKey(z,x,y);
+  if(baseCache.has(key) || basePending.has(key)) return;
+  basePending.add(key);
+  const img = new Image();
+  img.onload = () => {
+    basePending.delete(key);
+    baseCache.set(key, img);
+    if(baseCache.size > 900) baseCache.delete(baseCache.keys().next().value);
+    render();
+  };
+  img.onerror = () => basePending.delete(key);
+  img.src = `/tile?z=${z}&x=${x}&y=${y}&combo=${combo}&band=${grayBand}&_=${++tileSeq}`;
+}
+function hiddenList(){ return CLASSES.filter(c => c.hidden).map(c => c.id); }
+function fetchOverlay(z,x,y){
+  const key = ovKey(z,x,y);
+  if(ovPending.has(key)) return;
+  const cur = ovCache.get(key);
+  if(cur && cur.ver === ovVer) return;
+  ovPending.add(key);
+  const img = new Image();
+  const ver = ovVer;
+  img.onload = () => {
+    ovPending.delete(key);
+    ovCache.set(key, {img, ver});
+    if(ovCache.size > 500) ovCache.delete(ovCache.keys().next().value);
+    render();
+  };
+  img.onerror = () => ovPending.delete(key);
+  const hide = hiddenList().join(",");
+  img.src = `/overlay?z=${z}&x=${x}&y=${y}&hide=${hide}&_=${++tileSeq}`;
+}
+function bumpOverlay(){ ovVer++; }
+function clearTiles(){
+  baseCache.clear(); basePending.clear();
+  ovCache.clear(); ovPending.clear();
+  ovVer++;
+}
+
+function drawTiles(){
+  if(!INFO) return;
+  const z = neededZ();
+  const k = Math.pow(2, -z);
+  const tSize = 256*k*view.scale;
+  if(tSize < 3) return;
+  const x0 = -view.ox/view.scale, y0 = -view.oy/view.scale;
+  const x1 = (W - view.ox)/view.scale, y1 = (H - view.oy)/view.scale;
+  const tx0 = Math.floor(x0/(256*k)), tx1 = Math.ceil(x1/(256*k));
+  const ty0 = Math.floor(y0/(256*k)), ty1 = Math.ceil(y1/(256*k));
+  let fetched = 0;
+
+  for(let ty=ty0; ty<=ty1; ty++){
+    for(let tx=tx0; tx<=tx1; tx++){
+      if(tx < 0 || ty < 0) continue;
+      const sx = Math.round(tx*256*k*view.scale + view.ox);
+      const sy = Math.round(ty*256*k*view.scale + view.oy);
+      const d = Math.ceil(tSize) + 1;
+      const b = baseCache.get(baseKey(z,tx,ty));
+      if(b) ctx.drawImage(b, sx, sy, d, d);
+      else if(fetched < 40){ fetchBase(z,tx,ty); fetched++; }
+
+      if(ovShow && (b || fetched > 0)){
+        const key = ovKey(z,tx,ty);
+        const o = ovCache.get(key);
+        if(o) ctx.drawImage(o.img, sx, sy, d, d);
+        if(!o || o.ver !== ovVer) fetchOverlay(z,tx,ty);
+      }
+    }
+  }
+}
+
+/* ==================================================================
+   几何命中
+================================================================== */
+function pip(pt, poly){
+  let inside = false;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const [xi,yi] = poly[i], [xj,yj] = poly[j];
+    if(((yi > pt[1]) !== (yj > pt[1])) &&
+       (pt[0] < (xj-xi)*(pt[1]-yi)/(yj-yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+function distToSeg(p,a,b){
+  const dx = b[0]-a[0], dy = b[1]-a[1];
+  const len2 = dx*dx + dy*dy;
+  let t = len2 ? ((p[0]-a[0])*dx + (p[1]-a[1])*dy)/len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p[0]-(a[0]+t*dx), p[1]-(a[1]+t*dy));
+}
+function segMid(a,b){ return [(a[0]+b[0])/2, (a[1]+b[1])/2]; }
+function hitTest(sx,sy,tol){
+  const p = toImg(sx,sy);
+  const t = tol/view.scale;
+  if(sel >= 0 && parcels[sel]){
+    const pts = parcels[sel].pts;
+    for(let i=0;i<pts.length;i++)
+      if(Math.hypot(p[0]-pts[i][0], p[1]-pts[i][1]) <= t) return {pIdx:sel, vIdx:i};
+    for(let i=0;i<pts.length;i++){
+      const m = segMid(pts[i], pts[(i+1)%pts.length]);
+      if(Math.hypot(p[0]-m[0], p[1]-m[1]) <= t) return {pIdx:sel, mIdx:i};
+    }
+  }
+  for(let i=parcels.length-1;i>=0;i--)
+    if(pip(p, parcels[i].pts)) return {pIdx:i};
+  return null;
+}
+
+/* ==================================================================
+   渲染
+================================================================== */
+function render(){
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = "#0c0e12";
+  ctx.fillRect(0,0,W,H);
+  drawTiles();
+  if(!INFO){ return; }
+
+  /* 田块 */
+  parcels.forEach((pc,i)=>{
+    if(pc.pts.length < 2) return;
+    ctx.beginPath();
+    pc.pts.forEach((p,j)=>{ const [sx,sy] = toScr(p); j ? ctx.lineTo(sx,sy) : ctx.moveTo(sx,sy); });
+    ctx.closePath();
+    const isSel = i === sel;
+    ctx.fillStyle = isSel ? rgba(pc.cls, .34) : rgba(pc.cls, .18);
+    ctx.fill();
+    ctx.lineWidth = isSel ? 2.6 : 1.5;
+    ctx.strokeStyle = isSel ? "#ffffff" : clsColor(pc.cls);
+    ctx.stroke();
+    if(isSel){ ctx.strokeStyle = clsColor(pc.cls); ctx.lineWidth = 1.2; ctx.stroke(); }
+
+    let cx = 0, cy = 0;
+    pc.pts.forEach(p=>{ cx += p[0]; cy += p[1]; });
+    const [lx,ly] = toScr([cx/pc.pts.length, cy/pc.pts.length]);
+    const label = "#" + pc.id;
+    ctx.font = "700 11.5px Consolas, monospace";
+    const tw = ctx.measureText(label).width;
+    ctx.beginPath();
+    const bw = tw + 10, bh = 17;
+    ctx.roundRect ? ctx.roundRect(lx-bw/2, ly-bh/2, bw, bh, 4) : ctx.rect(lx-bw/2, ly-bh/2, bw, bh);
+    ctx.fillStyle = "rgba(12,14,18,.82)"; ctx.fill();
+    ctx.strokeStyle = clsColor(pc.cls); ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(label, lx, ly);
+  });
+
+  /* 选中田块的顶点 */
+  if(sel >= 0 && parcels[sel] && mode === "select"){
+    const pts = parcels[sel].pts;
+    pts.forEach((p,i)=>{
+      const [sx,sy] = toScr(p);
+      const isH = hover && hover.pIdx === sel && hover.vIdx === i;
+      ctx.beginPath(); ctx.rect(sx-4, sy-4, 8, 8);
+      ctx.fillStyle = isH ? "#ffb454" : "#fff"; ctx.fill();
+      ctx.strokeStyle = "#4f8cff"; ctx.lineWidth = 1.5; ctx.stroke();
+    });
+    pts.forEach((p,i)=>{
+      const m = segMid(p, pts[(i+1)%pts.length]);
+      const [mx,my] = toScr(m);
+      const isH = hover && hover.pIdx === sel && hover.mIdx === i;
+      ctx.beginPath(); ctx.arc(mx,my, isH ? 5 : 3.4, 0, Math.PI*2);
+      ctx.fillStyle = isH ? "#ffb454" : "rgba(79,140,255,.8)"; ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.stroke();
+    });
+  }
+
+  /* 绘制中的多边形 */
+  if(drawing && drawing.length){
+    ctx.beginPath();
+    drawing.forEach((p,j)=>{ const [sx,sy] = toScr(p); j ? ctx.lineTo(sx,sy) : ctx.moveTo(sx,sy); });
+    if(drawing._cur){ const [cx,cy] = toScr(drawing._cur); ctx.lineTo(cx,cy); }
+    ctx.strokeStyle = clsColor(activeCls);
+    ctx.lineWidth = 2; ctx.setLineDash([6,4]); ctx.stroke(); ctx.setLineDash([]);
+    drawing.forEach(p=>{
+      const [sx,sy] = toScr(p);
+      ctx.beginPath(); ctx.arc(sx,sy,4,0,Math.PI*2);
+      ctx.fillStyle = clsColor(activeCls); ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.2; ctx.stroke();
+    });
+    if(drawing.length >= 3){
+      const [fx,fy] = toScr(drawing[0]);
+      ctx.beginPath(); ctx.arc(fx,fy,7,0,Math.PI*2);
+      ctx.strokeStyle = "#3ecf8e"; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+
+  /* 涂抹预览 */
+  if(stroke && stroke.pts.length){
+    drawStrokePreview();
+  }
+
+  /* 文本标注 */
+  drawTexts();
+
+  /* 选区（PS 风格蚂蚁线） */
+  if(lassoPts && lassoPts.length) drawLassoLive();
+  if(selRegion || marquee) drawRegion();
+
+  /* 笔刷光标 */
+  if((mode === "brush" || mode === "erase") && mouse){
+    const r = Math.max(2.5, brushSize/2*view.scale);
+    ctx.beginPath(); ctx.arc(mouse[0], mouse[1], r, 0, Math.PI*2);
+    ctx.strokeStyle = mode === "erase" ? "rgba(255,107,107,.95)" : "rgba(255,255,255,.95)";
+    ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.beginPath(); ctx.arc(mouse[0], mouse[1], r+1.2, 0, Math.PI*2);
+    ctx.strokeStyle = "rgba(0,0,0,.55)"; ctx.lineWidth = 1; ctx.stroke();
+    /* 尺寸提示：光标右下角显示像素值与当前类别 */
+    const hint = `${brushSize}px · ${clsName(activeCls)}`;
+    ctx.font = '600 11px "Segoe UI","Microsoft YaHei",sans-serif';
+    const tw = ctx.measureText(hint).width;
+    const hx = mouse[0] + r + 8, hy = mouse[1] + r * 0.5 + 4;
+    ctx.fillStyle = "rgba(10,12,16,.82)";
+    if(ctx.roundRect){
+      ctx.beginPath(); ctx.roundRect(hx, hy - 12, tw + 12, 17, 8); ctx.fill();
+    }else{
+      ctx.fillRect(hx, hy - 12, tw + 12, 17);
+    }
+    ctx.fillStyle = mode === "erase" ? "#ff6b6b" : clsColor(activeCls);
+    ctx.fillText(hint, hx + 6, hy);
+  }
+  renderRemoteCursors();
+}
+function drawStrokePreview(){
+  const er = stroke.erase;
+  ctx.save();
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(1.5, stroke.size*view.scale);
+  ctx.strokeStyle = er ? "rgba(255,107,107,.55)" : rgba(stroke.cls, .62);
+  ctx.beginPath();
+  stroke.pts.forEach((p,j)=>{ const [sx,sy] = toScr(p); j ? ctx.lineTo(sx,sy) : ctx.moveTo(sx,sy); });
+  if(stroke.pts.length === 1){
+    const [sx,sy] = toScr(stroke.pts[0]);
+    ctx.lineTo(sx+0.01, sy);
+  }
+  ctx.stroke();
+  if(er){
+    ctx.setLineDash([5,4]); ctx.lineWidth = 1.2; ctx.strokeStyle = "rgba(255,255,255,.7)";
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+/* 选区蚂蚁线（rect / ellipse / lasso / wand-poly 共用） */
+function drawRegion(){
+  const r = selRegion || marquee;
+  if(!r) return;
+  ctx.save();
+  ctx.beginPath();
+  if(r.kind === "rect"){
+    const [ax, ay] = toScr([r.x0, r.y0]), [bx, by] = toScr([r.x1, r.y1]);
+    ctx.rect(ax, ay, bx - ax, by - ay);
+  } else if(r.kind === "ellipse"){
+    const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+    const rx = Math.abs(r.x1 - r.x0) / 2, ry = Math.abs(r.y1 - r.y0) / 2;
+    const [sx, sy] = toScr([cx, cy]);
+    ctx.ellipse(sx, sy, Math.max(1, rx * view.scale), Math.max(1, ry * view.scale), 0, 0, Math.PI * 2);
+  } else if(r.pts && r.pts.length >= 3){
+    r.pts.forEach((p, i) => {
+      const [sx, sy] = toScr(p);
+      i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy);
+    });
+    ctx.closePath();
+  } else { ctx.restore(); return; }
+  ctx.fillStyle = "rgba(255,255,255,.07)"; ctx.fill();
+  ctx.lineWidth = 3.2; ctx.strokeStyle = "rgba(255,255,255,.95)"; ctx.stroke();
+  ctx.lineWidth = 1.4; ctx.strokeStyle = "rgba(0,0,0,.9)";
+  ctx.setLineDash([5, 5]);
+  ctx.lineDashOffset = -((Date.now() / 60) % 10);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+/* 套索进行中：虚线回到起点 */
+function drawLassoLive(){
+  ctx.save();
+  ctx.beginPath();
+  lassoPts.forEach((p, i) => {
+    const [sx, sy] = toScr(p);
+    i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy);
+  });
+  if(mouse) ctx.lineTo(mouse[0], mouse[1]);
+  if(lassoPts.length){
+    const [fx, fy] = toScr(lassoPts[0]);
+    ctx.lineTo(fx, fy);
+  }
+  ctx.strokeStyle = "#ffb454"; ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
+  ctx.restore();
+}
+
+/* ==================================================================
+   文本标注
+================================================================== */
+const TEXT_FONT = '700 15px "Segoe UI","Microsoft YaHei",sans-serif';
+
+function drawTexts(){
+  if(!texts.length) return;
+  ctx.save();
+  ctx.font = TEXT_FONT;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  texts.forEach((t, i) => {
+    const [sx, sy] = toScr([t.x, t.y]);
+    ctx.lineWidth = 3.2;
+    ctx.strokeStyle = "rgba(8,10,14,.92)";
+    ctx.strokeText(t.text, sx, sy);
+    ctx.fillStyle = clsColor(t.cls);
+    ctx.fillText(t.text, sx, sy);
+    const w = ctx.measureText(t.text).width;
+    t._bb = [sx - 4, sy - 15, w + 8, 20];       // 供命中测试
+    if(i === selText){
+      ctx.strokeStyle = "#4f8cff"; ctx.lineWidth = 1.4;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(t._bb[0], t._bb[1], t._bb[2], t._bb[3]);
+      ctx.setLineDash([]);
+    }
+  });
+  ctx.restore();
+}
+function hitText(sx, sy){
+  for(let i = texts.length - 1; i >= 0; i--){
+    let bb = texts[i]._bb;
+    if(!bb){                                   // 尚未渲染过：先算一次
+      const [tx, ty] = toScr([texts[i].x, texts[i].y]);
+      ctx.font = TEXT_FONT;
+      const w = ctx.measureText(texts[i].text).width;
+      bb = texts[i]._bb = [tx - 4, ty - 15, w + 8, 20];
+    }
+    if(sx >= bb[0] && sx <= bb[0] + bb[2] && sy >= bb[1] && sy <= bb[1] + bb[3]) return i;
+  }
+  return -1;
+}
+function nextTextId(){
+  return texts.reduce((m, t) => Math.max(m, t.id), 0) + 1;
+}
+function openTextEditor(sx, sy, editingId){
+  closeTextEditor();
+  const [ix, iy] = toImg(sx, sy);
+  const el = document.createElement("input");
+  el.type = "text";
+  el.maxLength = 60;
+  el.placeholder = editingId >= 0 ? "修改文字，回车确认" : "输入标注文字，回车确认";
+  el.style.cssText = "position:absolute;left:" + Math.round(sx) + "px;top:" + Math.round(sy - 16) +
+    "px;z-index:30;background:rgba(18,20,26,.97);border:1.5px solid var(--accent);color:#fff;" +
+    "font:" + TEXT_FONT + ";padding:2px 7px;border-radius:5px;width:230px;outline:none;";
+  $("stage").appendChild(el);
+  const st = {el, ix, iy, editingId, done: false};
+  textEditor = st;
+  if(editingId >= 0) el.value = texts[editingId].text;
+  el.focus();
+  el.select();
+  el.addEventListener("keydown", ev => {
+    ev.stopPropagation();
+    if(ev.key === "Enter") commitTextEditor();
+    else if(ev.key === "Escape"){ closeTextEditor(); }
+  });
+  el.addEventListener("blur", () => commitTextEditor());
+}
+function closeTextEditor(){
+  if(!textEditor) return;
+  const st = textEditor;
+  textEditor = null;
+  st.done = true;
+  if(st.el && st.el.parentNode) st.el.parentNode.removeChild(st.el);
+}
+function commitTextEditor(){
+  const st = textEditor;
+  if(!st || st.done) return;
+  st.done = true;
+  const v = st.el.value.trim();
+  closeTextEditor();
+  if(!v) return;
+  snapVec(); pushAction("vector");
+  if(st.editingId >= 0){
+    texts[st.editingId].text = v;
+    toast("文本已更新");
+  } else {
+    texts.push({id: nextTextId(), x: st.ix, y: st.iy, cls: activeCls, text: v});
+    selText = texts.length - 1;
+    toast(`已添加文本「${v}」`);
+  }
+  setVecDirty(true);
+  refreshAll(); render();
+}
+function deleteText(){
+  if(selText < 0 || !texts[selText]) return;
+  snapVec(); pushAction("vector");
+  const t = texts.splice(selText, 1)[0];
+  selText = -1;
+  setVecDirty(true);
+  refreshAll(); render();
+  toast(`已删除文本「${t.text}」`);
+}
+function renderTextList(){
+  $("hText").textContent = texts.length;
+  const el = $("tlist");
+  if(!texts.length){
+    el.innerHTML = '<div class="empty" style="padding:10px 6px">按 <b>T</b> 然后点击画面添加文字</div>';
+    return;
+  }
+  el.innerHTML = texts.map((t, i) => `
+    <div class="prow${i === selText ? " sel" : ""}" role="button" tabindex="0" data-ti="${i}">
+      <span class="cdot" style="background:${clsColor(t.cls)}"></span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">${escapeHtml(t.text)}</span>
+      <button class="pbtn" data-tdel="${i}" title="删除">✕</button>
+    </div>`).join("");
+}
+
+/* ==================================================================
+   视口
+================================================================== */
+function resize(){
+  DPR = window.devicePixelRatio || 1;
+  W = $("stage").clientWidth;
+  H = $("stage").clientHeight;
+  cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
+  cv.style.width = W + "px"; cv.style.height = H + "px";
+  render();
+}
+function fitView(box){
+  if(!INFO) return;
+  let x0,y0,x1,y1;
+  if(box) [x0,y0,x1,y1] = box;
+  else { x0=0; y0=0; x1=INFO.width; y1=INFO.height; }
+  const pad = 40;
+  const s = Math.min((W-pad*2)/Math.max(1,x1-x0), (H-pad*2-24)/Math.max(1,y1-y0));
+  view.scale = Math.max(0.01, Math.min(s, 8));
+  view.ox = W/2 - (x0+x1)/2*view.scale;
+  view.oy = H/2 - (y0+y1)/2*view.scale;
+  render(); updateStatus();
+}
+function zoomAt(sx,sy,factor){
+  const ns = Math.max(1e-4, Math.min(16, view.scale*factor));
+  const [ix,iy] = toImg(sx,sy);
+  view.scale = ns;
+  view.ox = sx - ix*ns; view.oy = sy - iy*ns;
+  render(); updateStatus();
+}
+function fitAllParcels(){
+  if(!parcels.length){ fitView(); return; }
+  let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;
+  parcels.forEach(p=>p.pts.forEach(([x,y])=>{
+    x0=Math.min(x0,x); y0=Math.min(y0,y); x1=Math.max(x1,x); y1=Math.max(y1,y);
+  }));
+  const mx = Math.max(40,(x1-x0)*0.15), my = Math.max(40,(y1-y0)*0.15);
+  fitView([x0-mx, y0-my, x1+mx, y1+my]);
+}
+
+/* ==================================================================
+   鼠标交互
+================================================================== */
+cv.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  /* 涂抹/橡皮模式下右键：弹出笔刷快捷面板 */
+  if((mode === "brush" || mode === "erase") && INFO){
+    openBrushPop(e.clientX, e.clientY);
+  }else{
+    closeBrushPop();
+  }
+});
+
+function localXY(e){
+  const r = cv.getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top];
+}
+
+cv.addEventListener("mousedown", e => {
+  if(!INFO) return;
+  const [sx,sy] = localXY(e);
+  mouse = [sx,sy];
+
+  /* Alt+单击：从标签图吸取类别（吸管） */
+  if(e.altKey && e.button === 0){
+    pickClassAt(sx, sy);
+    e.preventDefault(); return;
+  }
+
+  if(e.button === 1 || (e.button === 0 && spaceDown)){
+    drag = {kind:"pan", sx, sy, ox:view.ox, oy:view.oy};
+    cv.classList.add("panning"); e.preventDefault(); return;
+  }
+
+  /* ---- 涂抹 / 橡皮 ---- */
+  if(mode === "brush" || mode === "erase"){
+    if(e.button !== 0) return;
+    stroke = {erase: mode === "erase", cls: activeCls, size: brushSize, pts: [toImg(sx,sy)]};
+    render();
+    e.preventDefault(); return;
+  }
+
+  /* ---- 多边形 ---- */
+  if(mode === "draw"){
+    if(e.button !== 0) return;
+    if(!drawing) drawing = [];
+    const p = toImg(sx,sy);
+    if(drawing.length >= 3){
+      const f = toScr(drawing[0]);
+      if(Math.hypot(f[0]-sx, f[1]-sy) < 12){ finishDraw(); return; }
+    }
+    drawing.push(p);
+    render(); return;
+  }
+
+  /* ---- 矩形 / 椭圆选框 ---- */
+  if(mode === "rect" || mode === "ellipse"){
+    if(e.button !== 0) return;
+    const p = toImg(sx, sy);
+    marquee = {kind: mode, x0: p[0], y0: p[1], x1: p[0], y1: p[1]};
+    render(); e.preventDefault(); return;
+  }
+
+  /* ---- 自由套索 ---- */
+  if(mode === "lasso"){
+    if(e.button !== 0) return;
+    lassoPts = [toImg(sx, sy)];
+    render(); e.preventDefault(); return;
+  }
+
+  /* ---- 魔棒 ---- */
+  if(mode === "wand"){
+    if(e.button !== 0) return;
+    doWand(sx, sy);
+    e.preventDefault(); return;
+  }
+
+  /* ---- 文本标注 ---- */
+  if(mode === "text"){
+    if(e.button !== 0) return;
+    const tIdx = hitText(sx, sy);
+    if(tIdx >= 0){
+      selText = tIdx; sel = -1;
+      drag = {kind:"textmove", i: tIdx, sx, sy,
+              x0: texts[tIdx].x, y0: texts[tIdx].y,
+              pre: JSON.stringify({p: parcels, t: texts}), pushed: false};
+      refreshAll(); render();
+    } else {
+      openTextEditor(sx, sy, -1);
+    }
+    e.preventDefault(); return;
+  }
+
+  /* ---- 选择 ---- */
+  if(e.button === 2){
+    drag = {kind:"pan", sx, sy, ox:view.ox, oy:view.oy};
+    cv.classList.add("panning"); return;
+  }
+  if(e.button !== 0) return;
+
+  /* 选择模式：先看是否点中文本 */
+  const tIdx0 = hitText(sx, sy);
+  if(tIdx0 >= 0){
+    selText = tIdx0; sel = -1;
+    drag = {kind:"textmove", i: tIdx0, sx, sy,
+            x0: texts[tIdx0].x, y0: texts[tIdx0].y,
+            pre: JSON.stringify({p: parcels, t: texts}), pushed: false};
+    refreshAll(); render();
+    return;
+  }
+  selText = -1;
+
+  const hit = hitTest(sx,sy,9);
+  if(hit && hit.vIdx !== undefined && hit.pIdx === sel){
+    snapVec(); pushAction("vector");
+    drag = {kind:"vertex", pIdx:hit.pIdx, vIdx:hit.vIdx};
+  } else if(hit && hit.mIdx !== undefined && hit.pIdx === sel){
+    snapVec(); pushAction("vector");
+    const pts = parcels[sel].pts;
+    pts.splice(hit.mIdx+1, 0, segMid(pts[hit.mIdx], pts[(hit.mIdx+1)%pts.length]));
+    drag = {kind:"vertex", pIdx:sel, vIdx:hit.mIdx+1};
+    setVecDirty(true); refreshAll();
+  } else if(hit){
+    sel = hit.pIdx;
+    drag = {kind:"poly", pIdx:hit.pIdx, sx, sy, start: JSON.stringify(parcels[hit.pIdx].pts),
+            pre: JSON.stringify({p: parcels, t: texts}), moved:false, pushed:false};
+    refreshAll(); render();
+  } else {
+    sel = -1; refreshAll(); render();
+    drag = {kind:"pan", sx, sy, ox:view.ox, oy:view.oy};
+    cv.classList.add("panning");
+  }
+});
+
+cv.addEventListener("mousemove", e => {
+  const [sx,sy] = localXY(e);
+  mouse = [sx,sy];
+  updateCoord(sx,sy);
+
+  if(stroke){
+    const p = toImg(sx,sy);
+    const last = stroke.pts[stroke.pts.length-1];
+    if(Math.hypot(p[0]-last[0], p[1]-last[1])*view.scale >= 1.6){
+      stroke.pts.push(p);
+      render();
+    } else {
+      render();
+    }
+    return;
+  }
+
+  if(drag){
+    if(drag.kind === "pan"){
+      view.ox = drag.ox + (sx - drag.sx);
+      view.oy = drag.oy + (sy - drag.sy);
+      render();
+    } else if(drag.kind === "vertex"){
+      parcels[drag.pIdx].pts[drag.vIdx] = toImg(sx,sy);
+      setVecDirty(true); render();
+    } else if(drag.kind === "poly"){
+      const dx = (sx - drag.sx)/view.scale, dy = (sy - drag.sy)/view.scale;
+      const orig = JSON.parse(drag.start);
+      parcels[drag.pIdx].pts = orig.map(([x,y])=>[x+dx, y+dy]);
+      if(!drag.pushed && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)){
+        vecUndo.push(drag.pre); if(vecUndo.length > 80) vecUndo.shift();
+        vecRedo.length = 0; pushAction("vector");
+        drag.pushed = true;
+      }
+      setVecDirty(true); render();
+    } else if(drag.kind === "textmove"){
+      const dx = (sx - drag.sx)/view.scale, dy = (sy - drag.sy)/view.scale;
+      texts[drag.i].x = drag.x0 + dx;
+      texts[drag.i].y = drag.y0 + dy;
+      if(!drag.pushed && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5)){
+        vecUndo.push(drag.pre); if(vecUndo.length > 80) vecUndo.shift();
+        vecRedo.length = 0; pushAction("vector");
+        drag.pushed = true;
+      }
+      setVecDirty(true); render();
+    }
+    return;
+  }
+
+  /* 选框拖拽（Shift = 正方形/正圆） */
+  if(marquee){
+    let p = toImg(sx, sy);
+    if(e.shiftKey){
+      const dx = p[0]-marquee.x0, dy = p[1]-marquee.y0;
+      const side = Math.max(Math.abs(dx), Math.abs(dy));
+      p = [marquee.x0 + (dx < 0 ? -side : side),
+           marquee.y0 + (dy < 0 ? -side : side)];
+    }
+    marquee.x1 = p[0]; marquee.y1 = p[1];
+    render(); return;
+  }
+  /* 套索采点 */
+  if(lassoPts){
+    const p = toImg(sx, sy);
+    const last = lassoPts[lassoPts.length-1];
+    if(Math.hypot(p[0]-last[0], p[1]-last[1])*view.scale >= 2.5) lassoPts.push(p);
+    render(); return;
+  }
+
+  if(mode === "draw" && drawing){
+    drawing._cur = toImg(sx,sy);
+    render(); return;
+  }
+
+  if(mode === "brush" || mode === "erase"){ render(); return; }
+
+  const hit = hitTest(sx,sy,9);
+  const changed = JSON.stringify(hit) !== JSON.stringify(hover);
+  hover = hit;
+  cv.style.cursor = hit && hit.vIdx !== undefined ? "pointer"
+                 : hit && hit.mIdx !== undefined ? "copy"
+                 : mode === "draw" ? "crosshair" : "default";
+  if(changed) render();
+});
+
+window.addEventListener("mouseup", async () => {
+  if(stroke){
+    const s = stroke; stroke = null;
+    await sendStroke(s);
+    render();
+    return;
+  }
+  if(marquee){
+    const m = marquee; marquee = null;
+    const w = Math.abs(m.x1 - m.x0), h = Math.abs(m.y1 - m.y0);
+    if(w * view.scale >= 4 && h * view.scale >= 4){
+      selRegion = {kind: m.kind,
+                   x0: Math.min(m.x0, m.x1), x1: Math.max(m.x0, m.x1),
+                   y0: Math.min(m.y0, m.y1), y1: Math.max(m.y0, m.y1)};
+      updateSelBar();
+    }
+    render(); return;
+  }
+  if(lassoPts){
+    const pts = lassoPts; lassoPts = null;
+    if(pts.length >= 3){
+      selRegion = {kind: "lasso", pts};
+      updateSelBar();
+    } else {
+      toast("选区太小，已取消", true);
+    }
+    render(); return;
+  }
+  if(drag && drag.kind === "poly" && !drag.pushed){
+    /* 未真正移动，丢弃快照 */
+  }
+  drag = null;
+  cv.classList.remove("panning");
+});
+
+cv.addEventListener("mouseleave", () => {
+  mouse = null;
+  $("sLon").textContent = "-"; $("sLat").textContent = "-";
+  if(mode === "brush" || mode === "erase") render();
+});
+
+cv.addEventListener("dblclick", e => {
+  if(mode === "draw" && drawing && drawing.length >= 3){
+    finishDraw();
+    e.preventDefault();
+    return;
+  }
+  if(INFO){
+    const [sx, sy] = localXY(e);
+    const ti = hitText(sx, sy);
+    if(ti >= 0){
+      selText = ti;
+      openTextEditor(sx, sy, ti);
+      render();
+      e.preventDefault();
+    }
+  }
+});
+
+cv.addEventListener("wheel", e => {
+  if(!INFO) return;
+  e.preventDefault();
+  if(e.altKey){                          /* Alt+滚轮：调笔刷大小，不缩放 */
+    setBrush(brushSize * Math.exp(-e.deltaY * 0.004));
+    return;
+  }
+  const [sx,sy] = localXY(e);
+  zoomAt(sx, sy, Math.exp(-e.deltaY*0.0016));
+}, {passive:false});
+
+/* ==================================================================
+   笔画发送 / 多边形完成
+================================================================== */
+async function sendStroke(s){
+  if(!s.pts.length) return;
+  setSave("saving", "保存中…");
+  try{
+    const j = await api("/stroke", {
+      points: s.pts.map(([x,y]) => [+x.toFixed(2), +y.toFixed(2)]),
+      size: s.size, cls: s.cls, erase: s.erase
+    });
+    pushAction("mask");
+    applyMaskStats(j.stats);
+    bumpOverlay();
+    markSaved();
+  }catch(err){ toast("涂抹保存失败: " + err.message, true); setSave("err","保存失败"); }
+}
+
+function finishDraw(){
+  if(!drawing || drawing.length < 3){ drawing = null; render(); return; }
+  snapVec(); pushAction("vector");
+  const id = nextId();
+  parcels.push({id, cls: activeCls, pts: drawing.slice()});
+  drawing = null;
+  sel = parcels.length - 1;
+  setVecDirty(true); refreshAll();
+  toast(`已添加田块 #${id} · ${clsName(activeCls)}`);
+}
+
+/* ==================================================================
+   键盘
+================================================================== */
+window.addEventListener("keydown", e => {
+  const tag = (e.target.tagName || "").toUpperCase();
+  if(tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+  if(e.target && e.target.closest && e.target.closest('[role="button"]')) return;
+  const k = e.key.toLowerCase();
+  if(e.code === "Space"){ spaceDown = true; e.preventDefault(); return; }
+
+  if(k === "v") setMode("select");
+  else if(k === "p") setMode("draw");
+  else if(k === "b") setMode("brush");
+  else if(k === "e") setMode("erase");
+  else if(k === "r") setMode("rect");
+  else if(k === "o") setMode("ellipse");
+  else if(k === "l") setMode("lasso");
+  else if(k === "w") setMode("wand");
+  else if(k === "t") setMode("text");
+  else if(k === "i") toggleModalOr("modalImg");
+  else if(k >= "1" && k <= "9"){ setActiveCls(+k); }
+  else if(k === "[" || k === "]"){ setBrush(brushSize + (k === "]" ? 4 : -4)); }
+  else if(k === "h" || k === "?") toggleModal("modalHelp");
+  else if(k === "f") fitAllParcels();
+  else if(k === "escape"){
+    if(lassoPts){ lassoPts = null; render(); }
+    else if(marquee){ marquee = null; render(); }
+    else if(selRegion){ clearSelRegion(); render(); }
+    else if(selText >= 0){ selText = -1; refreshAll(); render(); }
+    else if(stroke){ stroke = null; render(); }
+    else if(drawing){ drawing = null; render(); }
+    else if(document.querySelector(".modalopen")){ closeAllModals(); }
+    else { sel = -1; refreshAll(); render(); }
+  }
+  else if(k === "enter"){ if(mode === "draw") finishDraw(); }
+  else if(k === "delete" || k === "backspace"){
+    if(mode === "draw" && drawing){ drawing.pop(); render(); }
+    else if(selText >= 0){ deleteText(); }
+    else if(selRegion){ clearSelRegion(); render(); }
+    else deleteSelected();
+  }
+  else if((e.ctrlKey || e.metaKey) && k === "z"){ e.preventDefault(); undo(); }
+  else if((e.ctrlKey || e.metaKey) && (k === "y" || (k === "z" && e.shiftKey))){ e.preventDefault(); redo(); }
+  else if((e.ctrlKey || e.metaKey) && k === "s"){ e.preventDefault(); saveNow(); }
+});
+window.addEventListener("keyup", e => { if(e.code === "Space") spaceDown = false; });
+
+/* ==================================================================
+   模式 / 动作
+================================================================== */
+const MODE_BTNS = {select:"mSelect", draw:"mDraw", brush:"mBrush", erase:"mErase",
+                   rect:"mRect", ellipse:"mEllipse", lasso:"mLasso", wand:"mWand",
+                   text:"mText"};
+const ICON_MODES = {rect:1, ellipse:1, lasso:1, wand:1, text:1};
+
+function setMode(m){
+  mode = m;
+  if(m !== "brush" && m !== "erase") closeBrushPop();
+  if(m === "select") drawing = null;
+  for(const id in MODE_BTNS){
+    const b = $(MODE_BTNS[id]);
+    b.className = "tb" + (ICON_MODES[id] ? " icon" : "") + (id === m ? " active" : "");
+  }
+  cv.className = (m === "brush" || m === "erase") ? "brush" : (m === "select" ? "mode-select" : "");
+  $("wandWrap").style.display = m === "wand" ? "" : "none";
+  const hints = {
+    select: "选择模式：单击选中田块，拖顶点改形状，点边中点 ○ 插点，拖空白平移",
+    draw:   "多边形模式：单击加点，右键/回车/双击闭合，Esc 取消，退格删点",
+    brush:  "涂抹模式：按住左键拖动涂抹，单击即点一个圆点；[ ] 调笔刷大小，1-9 换类别",
+    erase:  "橡皮模式：按住左键擦除标签，仅擦掉涂抹结果",
+    rect:   "矩形选框：拖拽画矩形（Shift=正方形），松手后可「转为田块」或「涂进类别」，Esc 取消",
+    ellipse:"椭圆选框：拖拽画椭圆（Shift=正圆），松手后选择用途，Esc 取消",
+    lasso:  "套索：按住左键手绘轮廓，松手自动闭合成选区，Esc 取消",
+    wand:   "魔棒：单击影像自动选出颜色相似区域（右侧调容差），Esc 取消选区",
+    text:   "文本标注：点击画面输入文字（回车确认），拖动移动，双击编辑，Delete 删除"
+  };
+  $("hint").innerHTML = hints[m] + ` · 当前类别 <b>${clsName(activeCls)}</b>`;
+  render();
+}
+function toggleModal(id){
+  const el = $(id);
+  const open = el.style.display === "flex";
+  closeAllModals();
+  if(!open){ el.style.display = "flex"; el.classList.add("modalopen"); resize(); resize(); }
+}
+function closeAllModals(){
+  ["modalFile","modalClass","modalHelp","modalImg"].forEach(id => {
+    const el = $(id); el.style.display = "none"; el.classList.remove("modalopen");
+  });
+}
+function toggleModalOr(id){
+  const el = $(id);
+  const open = el.style.display === "flex";
+  closeAllModals();
+  if(open) { resize(); resize(); return; }
+  el.style.display = "flex"; el.classList.add("modalopen");
+  resize(); resize();
+}
+function deleteSelected(){
+  if(sel < 0 || !parcels[sel]) return;
+  snapVec(); pushAction("vector");
+  const id = parcels[sel].id;
+  parcels.splice(sel,1);
+  sel = -1; setVecDirty(true); refreshAll(); render();
+  toast(`已删除田块 #${id}`);
+}
+async function bakeParcels(){
+  if(!parcels.length){ toast("还没有田块", true); return; }
+  if(!confirm(`把 ${parcels.length} 个田块按其类别栅格化写进标签图？`)) return;
+  try{
+    setSave("saving","保存中…");
+    const j = await api("/bake", {features: buildGeoJSON().features, cls: activeCls});
+    if(!j.count){ toast("没有可栅格化的多边形", true); return; }
+    pushAction("mask");
+    applyMaskStats(j.stats); bumpOverlay(); markSaved();
+    toast(`已写入标签图（${j.count} 个多边形）`);
+  }catch(e){ toast("栅格化失败: " + e.message, true); setSave("err","保存失败"); }
+}
+
+/* ==================================================================
+   保存（自动 / 手动）——多人增量合并
+================================================================== */
+let vecTimer = null;
+/* 与服务端一致的要素键：文本与田块 id 空间独立 */
+function fkey(f){ const p = (f && f.properties) || {}; return (p.type === "text" ? "t:" : "p:") + p.id; }
+/* 本地视角的“已同步基线”：始终用 buildGeoJSON() 归一化后再存，
+   避免服务端附加的 owner/editor 字段造成假差异 */
+let syncedFeats = new Map();
+function rebuildSynced(){
+  const m = new Map();
+  buildGeoJSON().features.forEach(f => m.set(fkey(f), JSON.stringify(f)));
+  syncedFeats = m;
+}
+function setVecDirty(v){
+  vecDirty = v;
+  if(v){
+    if(!actions.length || actions[actions.length-1].type !== "vector") pushAction("vector");
+    if(autosave) scheduleVecSave();
+    else setSave("dirty","未保存");
+  }
+}
+function scheduleVecSave(){
+  setSave("dirty","未保存");
+  clearTimeout(vecTimer);
+  vecTimer = setTimeout(saveVec, 900);
+}
+async function saveVec(){
+  if(!vecDirty || !INFO) return;
+  setSave("saving","保存中…");
+  try{
+    const feats = buildGeoJSON().features;
+    const cur = new Map();
+    feats.forEach(f => cur.set(fkey(f), JSON.stringify(f)));
+    const upsert = [], remove = [];
+    for(const [k, s] of cur){
+      if(syncedFeats.get(k) !== s) upsert.push(JSON.parse(s));
+    }
+    for(const k of syncedFeats.keys()){
+      if(!cur.has(k)) remove.push(k);
+    }
+    if(upsert.length || remove.length){
+      const j = await api("/save", {mode: "merge", upsert, remove});
+      if(j.rev) vecRev = j.rev;
+      if(j.count != null) console.log("saved", j.count, "features,", upsert.length, "upsert /", remove.length, "remove");
+    }
+    syncedFeats = cur;
+    setVecDirtySilent();
+    markSaved();
+    if(pendingRemote){ pendingRemote = false; refreshParcels(); }
+  }catch(e){ setSave("err","保存失败"); toast("自动保存失败: " + e.message, true); }
+}
+function setVecDirtySilent(){ vecDirty = false; }
+async function saveNow(){
+  if(!INFO){ toast("请先打开影像", true); return; }
+  try{
+    await saveVec();                       // 增量合并（无改动则跳过）
+    const j = await api("/flush", {});
+    applyMaskStats(j.stats);
+    markSaved();
+    toast("已保存矢量与标签图");
+  }catch(e){ toast("保存失败: " + e.message, true); setSave("err","保存失败"); }
+}
+function markSaved(){
+  setSave("ok", "已保存 " + new Date().toTimeString().slice(0,8));
+}
+function markReady(){
+  if(!/^已保存/.test($("sSave").textContent)) setSave("ok", "就绪");
+}
+function setSave(kind, text){
+  const el = $("saveState");
+  el.className = kind === "ok" ? "" : kind;
+  $("sSave").textContent = text;
+}
+
+/* ==================================================================
+   侧栏：类别 / 田块 / 统计
+================================================================== */
+function renderClasses(){
+  const el = $("clist");
+  if(!CLASSES.length){ el.innerHTML = '<div class="empty">暂无类别</div>'; return; }
+  const cnt = maskCounts();
+  el.innerHTML = CLASSES.map(c => `
+    <div class="crow${c.id === activeCls ? " active" : ""}${c.hidden ? " hiddencls" : ""}" role="button" tabindex="0" data-id="${c.id}">
+      <span class="cdot" style="background:${c.color}"></span>
+      <span class="nm">${escapeHtml(c.name)}</span>
+      <span class="cid">${cnt[c.id] ? (cnt[c.id]/1000).toFixed(1)+"k" : c.id}</span>
+      <button class="mini" data-eye="${c.id}" title="显示/隐藏该类别">${c.hidden ? "○" : "●"}</button>
+      <button class="mini" data-edit="${c.id}" title="编辑">✎</button>
+      <button class="mini del" data-del="${c.id}" title="删除">✕</button>
+    </div>`).join("");
+  renderClassChips();
+}
+function renderClassChips(){
+  const bar = $("classbar");
+  const host = $("toolbar").querySelector(".group.grow");
+  let el = $("classbar");
+  if(!el){
+    el = document.createElement("div");
+    el.id = "classbar";
+    host.parentNode.insertBefore(el, host);
+  }
+  el.innerHTML = CLASSES.map(c =>
+    `<span class="cchip${c.id===activeCls?" active":""}" role="button" tabindex="0" aria-label="类别 ${escapeHtml(c.name)}" data-id="${c.id}">
+       <span class="cdot" style="background:${c.color}"></span>${escapeHtml(c.name)}</span>`).join("");
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+}
+function setActiveCls(id){
+  if(!clsById(id)) return;
+  activeCls = +id;
+  renderClasses();
+  setMode(mode);
+  render();
+}
+let LAST_MASK = null;
+function maskCounts(){
+  if(!LAST_MASK || !LAST_MASK.counts) return {};
+  const o = {};
+  for(const k in LAST_MASK.counts) o[k] = LAST_MASK.counts[k];
+  return o;
+}
+function applyMaskStats(st){
+  LAST_MASK = st || null;
+  if(st){
+    maskCanUndo = !!st.can_undo; maskCanRedo = !!st.can_redo;
+    let painted = 0;
+    for(const k in (st.counts||{})) if(+k > 0) painted += st.counts[k];
+    $("sPaint").textContent = painted.toLocaleString();
+    if(st.last_saved) $("sSave").textContent = "已保存 " + st.last_saved;
+  }
+  updateHistoryButtons();
+  renderClasses();
+  renderStats();
+}
+function renderStats(){
+  const el = $("stats");
+  const cnt = maskCounts();
+  const rows = [];
+  let totPx = 0, totHa = 0;
+  CLASSES.forEach(c => {
+    const n = cnt[c.id] || 0;
+    totPx += n;
+    rows.push(`<div class="stat">
+      <span><span class="cdot" style="display:inline-block;background:${c.color};
+        width:9px;height:9px;border-radius:2px;margin-right:6px"></span>${escapeHtml(c.name)}</span>
+      <b>${n.toLocaleString()} px</b></div>`);
+  });
+  const pv = parcels.reduce((s,p)=>s+areaHa(p.pts),0);
+  el.innerHTML = rows.join("") +
+    `<div class="stat" style="border-top:1px solid var(--line);margin-top:4px;padding-top:6px">
+       <span>涂抹像素合计</span><b>${totPx.toLocaleString()} px</b></div>
+     <div class="stat"><span>田块矢量面积</span><b>${pv.toFixed(2)} ha</b></div>`;
+  renderClasses();
+}
+function renderParcels(){
+  const el = $("plist");
+  if(!parcels.length){
+    el.innerHTML = '<div class="empty">暂无田块<br>按 <b>P</b> 绘制多边形</div>';
+  } else {
+    el.innerHTML = parcels.map((p,i)=>`
+      <div class="prow${i===sel?" sel":""}" role="button" tabindex="0" data-i="${i}">
+        <span class="cdot" style="background:${clsColor(p.cls)}"></span>
+        <span class="pid">#${p.id}</span>
+        <span class="pcls" style="color:${clsColor(p.cls)};border-color:${clsColor(p.cls)}">${escapeHtml(clsName(p.cls))}</span>
+        <span class="pa">${areaHa(p.pts).toFixed(2)} ha</span>
+      </div>`).join("");
+  }
+  $("hCount").textContent = parcels.length;
+  $("sCount").textContent = parcels.length;
+  const props = $("props");
+  if(sel >= 0 && parcels[sel]){
+    props.style.display = "";
+    $("pId").textContent = "#" + parcels[sel].id;
+    $("pArea").textContent = areaHa(parcels[sel].pts).toFixed(3) + " ha";
+    $("pCls").innerHTML = CLASSES.map(c =>
+      `<option value="${c.id}"${c.id===parcels[sel].cls?" selected":""}>${escapeHtml(c.name)}</option>`).join("");
+  } else {
+    props.style.display = "none";
+  }
+}
+function refreshAll(){ renderClasses(); renderParcels(); renderStats(); renderTextList(); }
+
+$("clist").addEventListener("click", e => {
+  const eye = e.target.dataset.eye, ed = e.target.dataset.edit, dl = e.target.dataset.del;
+  if(eye !== undefined){
+    const c = clsById(eye); if(c){ c.hidden = !c.hidden; bumpOverlay(); renderClasses(); render(); }
+    return;
+  }
+  if(ed !== undefined){ openClassModal(clsById(ed)); return; }
+  if(dl !== undefined){
+    const c = clsById(dl);
+    if(!c) return;
+    const used = parcels.some(p => p.cls === c.id);
+    if(!confirm(`删除类别「${c.name}」${used ? "（已有田块属于该类）" : ""}？`)) return;
+    CLASSES = CLASSES.filter(x => x.id !== c.id);
+    if(activeCls === c.id) activeCls = CLASSES.length ? CLASSES[0].id : 1;
+    saveClasses(); renderClasses(); renderParcels(); renderStats(); setMode(mode); render();
+    return;
+  }
+  const row = e.target.closest(".crow");
+  if(row) setActiveCls(row.dataset.id);
+});
+$("tlist").addEventListener("click", e => {
+  const del = e.target.dataset.tdel;
+  if(del !== undefined){
+    selText = +del;
+    deleteText();
+    return;
+  }
+  const row = e.target.closest("[data-ti]");
+  if(!row) return;
+  selText = +row.dataset.ti;
+  sel = -1;
+  renderTextList(); render(); renderParcels();
+  const t = texts[selText];
+  if(t){
+    const cx = t.x*view.scale + view.ox, cy = t.y*view.scale + view.oy;
+    if(cx < 40 || cx > W-40 || cy < 70 || cy > H-40){
+      view.ox = W/2 - t.x*view.scale;
+      view.oy = H/2 - t.y*view.scale;
+      render();
+    }
+  }
+});
+$("plist").addEventListener("click", e => {
+  const row = e.target.closest(".prow");
+  if(!row) return;
+  sel = +row.dataset.i;
+  renderParcels(); render(); renderStats();
+  const p = parcels[sel];
+  let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18;
+  p.pts.forEach(([x,y])=>{ x0=Math.min(x0,x); y0=Math.min(y0,y); x1=Math.max(x1,x); y1=Math.max(y1,y); });
+  const cx = (x0+x1)/2*view.scale + view.ox, cy = (y0+y1)/2*view.scale + view.oy;
+  if(cx < 40 || cx > W-40 || cy < 70 || cy > H-40){
+    view.ox = W/2 - (x0+x1)/2*view.scale;
+    view.oy = H/2 - (y0+y1)/2*view.scale;
+    render();
+  }
+});
+$("pCls").addEventListener("change", e => {
+  if(sel < 0 || !parcels[sel]) return;
+  snapVec(); pushAction("vector");
+  parcels[sel].cls = +e.target.value;
+  setVecDirty(true); renderParcels(); render(); renderStats();
+});
+
+/* ==================================================================
+   类别弹窗
+================================================================== */
+let editingCls = null;
+function openClassModal(c){
+  editingCls = c || null;
+  $("clsTitle").textContent = c ? "编辑类别" : "新增类别";
+  const ids = CLASSES.map(x=>x.id);
+  let nid = 1; while(ids.includes(nid)) nid++;
+  $("clsId").value = c ? c.id : nid;
+  $("clsName").value = c ? c.name : "";
+  $("clsColor").value = c ? c.color : "#4f8cff";
+  $("clsId").disabled = !!c;
+  toggleModalOr("modalClass");
+}
+$("btnAddCls").onclick = () => openClassModal(null);
+$("clsCancel").onclick = closeAllModals;
+$("clsOk").onclick = () => {
+  const id = +$("clsId").value;
+  const name = ($("clsName").value || "").trim() || `类别${id}`;
+  const color = $("clsColor").value;
+  if(!(id >= 1 && id <= 255)){ toast("类别 ID 需为 1-255", true); return; }
+  if(editingCls){
+    editingCls.name = name; editingCls.color = color;
+  } else {
+    if(CLASSES.some(c => c.id === id)){ toast("该 ID 已存在", true); return; }
+    CLASSES.push({id, name, color, hidden:false});
+  }
+  CLASSES.sort((a,b)=>a.id-b.id);
+  saveClasses();
+  closeAllModals();
+  renderClasses(); renderParcels(); render(); renderStats();
+  toast(editingCls ? "类别已更新" : `已新增类别「${name}」`);
+};
+async function saveClasses(){
+  try{ await api("/classes", {classes: CLASSES.map(c => ({id:c.id, name:c.name, color:c.color}))}); }
+  catch(e){ toast("类别保存失败: " + e.message, true); }
+}
+
+/* ==================================================================
+   文件浏览器
+================================================================== */
+let browseCur = "", browseSelFile = null, homeDir = "";
+async function browse(path){
+  try{
+    const j = await api("/browse?path=" + encodeURIComponent(path || ""));
+    browseCur = j.path || "";
+    if(j.home) homeDir = j.home;
+    $("pathInput").value = browseCur;
+    $("crumbs").innerHTML = j.recent && j.recent.length
+      ? j.recent.map(r => `<span class="crumb" data-p="${encodeURIComponent(r)}">★ ${escapeHtml(r)}</span>`).join("")
+      : "";
+    $("dirList").innerHTML = (j.dirs||[]).map(d =>
+      `<div class="fitem" role="button" tabindex="0" aria-label="文件夹 ${escapeHtml(d.name)}" data-dir="${encodeURIComponent(d.path)}"><span class="ic">📁</span>${escapeHtml(d.name)}</div>`).join("")
+      || '<div class="empty">（无子文件夹）</div>';
+    $("fileList").innerHTML = (j.files||[]).map(f =>
+      `<div class="fitem" role="button" tabindex="0" aria-label="影像 ${escapeHtml(f.name)}" data-file="${encodeURIComponent(f.path)}"><span class="ic">🖼</span>${escapeHtml(f.name)}
+        <span class="sz">${fmtSize(f.size)}</span></div>`).join("")
+      || '<div class="empty">（该目录下没有影像文件）</div>';
+    browseSelFile = null;
+    $("fileConfirm").disabled = true;
+    $("filePicked").textContent = "";
+  }catch(e){ toast("浏览失败: " + e.message, true); }
+}
+$("dirList").addEventListener("click", e => {
+  const d = e.target.closest("[data-dir]"); if(!d) return;
+  browse(decodeURIComponent(d.dataset.dir));
+});
+$("dirList").addEventListener("dblclick", e => {
+  const d = e.target.closest("[data-dir]"); if(!d) return;
+  browse(decodeURIComponent(d.dataset.dir));
+});
+$("fileList").addEventListener("click", e => {
+  const f = e.target.closest("[data-file]"); if(!f) return;
+  document.querySelectorAll("#fileList .fitem").forEach(n => n.classList.remove("sel"));
+  f.classList.add("sel");
+  browseSelFile = decodeURIComponent(f.dataset.file);
+  $("fileConfirm").disabled = false;
+  $("filePicked").textContent = browseSelFile;
+});
+$("fileList").addEventListener("dblclick", e => {
+  const f = e.target.closest("[data-file]"); if(!f) return;
+  browseSelFile = decodeURIComponent(f.dataset.file);
+  doOpen(browseSelFile);
+});
+$("crumbs").addEventListener("click", e => {
+  const c = e.target.closest("[data-p]"); if(!c) return;
+  browse(decodeURIComponent(c.dataset.p));
+});
+$("btnUp").onclick = () => {
+  if(!browseCur) return;
+  const parent = browseCur.replace(/[\\/]+$/,"").split(/[\\/]/).slice(0,-1).join("\\");
+  browse(parent || "");
+};
+$("btnHome").onclick = () => browse(homeDir || "");
+$("btnGo").onclick = () => browse($("pathInput").value.trim());
+$("pathInput").addEventListener("keydown", e => {
+  if(e.key === "Enter"){ e.preventDefault(); browse($("pathInput").value.trim()); }
+});
+$("btnOpen").onclick = () => { toggleModalOr("modalFile"); browse(browseCur || ""); };
+$("fileClose").onclick = closeAllModals;
+$("fileCancel").onclick = closeAllModals;
+$("fileConfirm").onclick = () => { if(browseSelFile) doOpen(browseSelFile); };
+
+async function doOpen(path){
+  if(!path) return;
+  if(vecDirty && !confirm("当前矢量标注尚未保存，切换影像将丢失更改。继续？")) return;
+  setSave("saving","加载中…");
+  try{
+    const j = await api("/open", {path});
+    closeAllModals();
+    applyInfo(j.info);
+    if(j.classes) { CLASSES = j.classes.map(c=>({...c, hidden:false})); }
+    applyMaskStats(j.mask);
+    const labels = await api("/parcels");
+    applyParcelsFromGeo(labels);
+    if(labels && labels.rev != null) vecRev = labels.rev;
+    rebuildSynced();
+    vecUndo.length = 0; vecRedo.length = 0; actions.length = 0;
+    vecDirty = false; sel = -1; drawing = null; stroke = null;
+    clearSelRegion();
+    clearTiles();
+    refreshAll();
+    fitView();
+    setMode("select");
+    markReady();
+    toast("已打开 " + j.info.name);
+  }catch(e){ toast("打开失败: " + e.message, true); setSave("err","打开失败"); }
+}
+
+/* ==================================================================
+   数据装载
+================================================================== */
+async function api(path, body){
+  let opt = {};
+  if(body !== undefined){
+    if(body && typeof body === "object" && !Array.isArray(body)){
+      body = Object.assign({client: ME ? ME.id : "", name: ME ? ME.name : ""}, body);
+    }
+    opt = {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)};
+  }
+  const r = await fetch(path, opt);
+  const ct = r.headers.get("Content-Type") || "";
+  const j = ct.includes("json") ? await r.json() : await r.text();
+  if(j && j.error) throw new Error(j.error);
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return j;
+}
+function applyInfo(info){
+  INFO = info; AFFINE = info.affine; computeInv();
+  $("title").textContent = info.name;
+  $("sFile").textContent = `${info.name} · ${info.width}×${info.height} · ${info.count}波段 · ${info.crs || "无CRS"}`;
+  $("sZoom").textContent = "-";
+  const bs = $("bandSel");
+  bs.innerHTML = "";
+  for(let i=1;i<=info.count;i++){
+    const d = info.descriptions && info.descriptions[i-1] ? " " + info.descriptions[i-1] : "";
+    bs.innerHTML += `<option value="${i}">波段${i}${d}</option>`;
+  }
+  $("sPaint").textContent = "0";
+}
+/* 拉取服务端矢量并替换本地（用于远端 save 事件后的差量刷新） */
+async function refreshParcels(log){
+  try{
+    const fc = await api("/parcels");
+    if(fc && fc.rev != null) vecRev = fc.rev;
+    applyParcelsFromGeo(fc);
+    rebuildSynced();
+    sel = -1; selText = -1;
+    refreshAll(); render();
+    if(log) toast(log);
+  }catch(e){ if(log) toast("同步失败: " + e.message, true); }
+}
+function applyParcelsFromGeo(fc){
+  parcels = [];
+  texts = [];
+  const feats = (fc && fc.features) ? fc.features : [];
+  feats.forEach(f => {
+    const props = f.properties || {};
+    const g = f.geometry;
+    if(props.type === "text"){
+      let tx = null, ty = null;
+      if(props.image_px && Array.isArray(props.image_px)){
+        tx = +props.image_px[0]; ty = +props.image_px[1];
+      } else if(g && g.type === "Point" && g.coordinates){
+        [tx, ty] = imgFromGeo(g.coordinates[0], g.coordinates[1]);
+      }
+      if(isFinite(tx) && isFinite(ty)){
+        texts.push({id:+props.id || 0, cls:+props.cls || 1,
+                    text:String(props.text || ""), x:tx, y:ty});
+      }
+      return;
+    }
+    let pts = null;
+    if(props.image_px && Array.isArray(props.image_px) && props.image_px.length >= 3){
+      pts = props.image_px.map(p => [+p[0], +p[1]]);
+    } else if(g && g.type === "Polygon" && g.coordinates && g.coordinates[0]){
+      pts = g.coordinates[0].slice(0,-1).map(c => imgFromGeo(c[0], c[1]));
+    }
+    if(pts && pts.length >= 3){
+      parcels.push({id:+props.id || 0, cls:+props.cls || 1, pts});
+    }
+  });
+  parcels.sort((a,b)=>a.id-b.id);
+  let mx = parcels.reduce((m,p)=>Math.max(m,p.id),0);
+  parcels.forEach(p => { if(!p.id) p.id = ++mx; });
+  texts.sort((a,b)=>a.id-b.id);
+  let mt = texts.reduce((m,t)=>Math.max(m,t.id),0);
+  texts.forEach(t => { if(!t.id) t.id = ++mt; });
+  selText = -1;
+}
+function buildGeoJSON(){
+  return {
+    type: "FeatureCollection",
+    features: [
+      ...parcels.map(p => ({
+        type: "Feature",
+        properties: {
+          id: p.id, cls: p.cls, class_name: clsName(p.cls),
+          area_ha: +areaHa(p.pts).toFixed(4),
+          image_px: p.pts.map(([x,y]) => [+x.toFixed(1), +y.toFixed(1)])
+        },
+        geometry: {
+          type: "Polygon",
+          coordinates: [[...p.pts.map(([x,y]) => geoFromImg(x,y)),
+                         geoFromImg(p.pts[0][0], p.pts[0][1])]]
+        }
+      })),
+      ...texts.map(t => ({
+        type: "Feature",
+        properties: {
+          type: "text", id: t.id, cls: t.cls, class_name: clsName(t.cls),
+          text: t.text, image_px: [+t.x.toFixed(1), +t.y.toFixed(1)]
+        },
+        geometry: {type: "Point", coordinates: geoFromImg(t.x, t.y)}
+      }))
+    ]
+  };
+}
+function downloadGeoJSON(){
+  const fc = buildGeoJSON();
+  const blob = new Blob([JSON.stringify(fc, null, 1)], {type:"application/geo+json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = (INFO ? INFO.name.replace(/\.[^.]+$/,"") : "parcels") + ".parcels.geojson";
+  a.click(); URL.revokeObjectURL(a.href);
+}
+async function exportTif(){
+  try{
+    setSave("saving","导出中…");
+    await saveVec();
+    const j = await api("/export_tif", {});
+    markSaved();
+    toast("已导出标签 GeoTIFF: " + j.path.split(/[\\/]/).pop());
+  }catch(e){ toast("导出失败: " + e.message, true); setSave("err","导出失败"); }
+}
+async function exportCsv(){
+  try{
+    const j = await api("/export_csv", {});
+    toast("已导出统计: " + j.path.split(/[\\/]/).pop());
+  }catch(e){ toast("导出失败: " + e.message, true); }
+}
+async function clearMask(){
+  const cls = activeCls;
+  if(!confirm(`清空标签图中的「${clsName(cls)}」涂抹像素？（可撤销）`)) return;
+  try{
+    const j = await api("/mask_clear", {cls});
+    pushAction("mask"); applyMaskStats(j.stats); bumpOverlay();
+    markSaved(); toast("已清空该类涂抹");
+  }catch(e){ toast("清空失败: " + e.message, true); }
+}
+
+/* ==================================================================
+   状态栏
+================================================================== */
+function updateStatus(){ $("sZoom").textContent = view.scale.toFixed(2) + "x"; }
+function updateCoord(sx,sy){
+  if(!INFO) return;
+  const [ix,iy] = toImg(sx,sy);
+  const g = geoFromImg(ix,iy);
+  $("sLon").textContent = g[0].toFixed(6);
+  $("sLat").textContent = g[1].toFixed(6);
+}
+function setBrush(v){
+  brushSize = Math.max(1, Math.min(300, Math.round(v)));
+  $("brushSize").value = brushSize;
+  $("brushVal").textContent = brushSize + " px";
+  const bp = $("bpSize"), bv = $("bpVal");
+  if(bp) bp.value = brushSize;
+  if(bv) bv.textContent = brushSize + " px";
+  if(mode === "brush" || mode === "erase") render();
+}
+/* Alt+单击吸类别：查标签图像素值并切为该类 */
+async function pickClassAt(sx, sy){
+  const [ix, iy] = toImg(sx, sy);
+  try{
+    const j = await api(`/maskval?x=${Math.round(ix)}&y=${Math.round(iy)}`);
+    if(j.cls > 0 && clsById(j.cls)){
+      setActiveCls(j.cls);
+      toast(`已吸取类别：${clsName(j.cls)}`);
+    }else{
+      toast("该位置没有标注", true);
+    }
+  }catch(e){ toast("吸取失败: " + e.message, true); }
+}
+/* 右键笔刷面板 */
+function openBrushPop(cx, cy){
+  const pop = $("brushpop");
+  if(!pop) return;
+  brushPopOpen = true;
+  /* 类别快捷 chips */
+  $("bpClasses").innerHTML = CLASSES.map(c =>
+    `<span class="bpchip${c.id === activeCls ? " active" : ""}" data-id="${c.id}">${escapeHtml(c.name)}</span>`).join("");
+  pop.style.display = "block";
+  const stage = $("stage").getBoundingClientRect();
+  const w = pop.offsetWidth || 230, h = pop.offsetHeight || 150;
+  let x = cx - stage.left + 10, y = cy - stage.top + 8;
+  if(x + w > stage.width - 8) x = stage.width - w - 8;
+  if(y + h > stage.height - 8) y = Math.max(8, cy - stage.top - h - 8);
+  pop.style.left = x + "px";
+  pop.style.top = y + "px";
+  $("bpSize").value = brushSize;
+  $("bpVal").textContent = brushSize + " px";
+}
+function closeBrushPop(){
+  const pop = $("brushpop");
+  if(pop) pop.style.display = "none";
+  brushPopOpen = false;
+}
+$("bpSize").addEventListener("input", e => setBrush(+e.target.value));
+$("bpClasses").addEventListener("click", e => {
+  const chip = e.target.closest(".bpchip");
+  if(!chip) return;
+  setActiveCls(+chip.dataset.id);
+  $("bpClasses").querySelectorAll(".bpchip").forEach(c =>
+    c.classList.toggle("active", +c.dataset.id === activeCls));
+});
+document.addEventListener("mousedown", e => {
+  if(brushPopOpen && !e.target.closest("#brushpop") && e.target !== cv) closeBrushPop();
+});
+
+/* ==================================================================
+   选区（PS 风格）
+================================================================== */
+function clearSelRegion(){
+  selRegion = null;
+  $("selbar").classList.remove("show");
+  $("sSel").textContent = "-";
+}
+function shoelacePx(pts){
+  let s = 0;
+  for(let i = 0; i < pts.length; i++){
+    const [x1,y1] = pts[i], [x2,y2] = pts[(i+1) % pts.length];
+    s += x1*y2 - x2*y1;
+  }
+  return Math.abs(s) / 2;
+}
+/* 选区 -> 顶点列表（统一表示，可直接当田块或栅格化） */
+function regionPts(){
+  const r = selRegion;
+  if(!r) return null;
+  if(r.kind === "rect"){
+    return [[r.x0, r.y0], [r.x1, r.y0], [r.x1, r.y1], [r.x0, r.y1]];
+  }
+  if(r.kind === "ellipse"){
+    const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+    const rx = Math.abs(r.x1 - r.x0) / 2, ry = Math.abs(r.y1 - r.y0) / 2;
+    const pts = [];
+    for(let i = 0; i < 64; i++){
+      const a = i / 64 * Math.PI * 2;
+      pts.push([cx + rx * Math.cos(a), cy + ry * Math.sin(a)]);
+    }
+    return pts;
+  }
+  return r.pts ? r.pts.slice() : null;
+}
+function selPxArea(){
+  const r = selRegion;
+  if(!r) return 0;
+  if(r.kind === "rect") return Math.abs((r.x1 - r.x0) * (r.y1 - r.y0));
+  if(r.kind === "ellipse") return Math.PI * Math.abs(r.x1 - r.x0) / 2 * Math.abs(r.y1 - r.y0) / 2;
+  if(r.area_px != null) return r.area_px;
+  const pts = regionPts();
+  return pts ? shoelacePx(pts) : 0;
+}
+function updateSelBar(){
+  const bar = $("selbar");
+  if(!selRegion){
+    bar.classList.remove("show");
+    $("sSel").textContent = "-";
+    return;
+  }
+  bar.classList.add("show");
+  const px = Math.round(selPxArea());
+  const pts = regionPts();
+  const ha = pts ? areaHa(pts) : 0;
+  $("selInfo").innerHTML = `选区 <b>${px.toLocaleString()}</b> px · ${ha.toFixed(2)} ha`;
+  $("sSel").textContent = px.toLocaleString() + " px";
+}
+async function doWand(sx, sy){
+  if(wandBusy) return;
+  if(!INFO){ toast("请先打开影像", true); return; }
+  const [ix, iy] = toImg(sx, sy);
+  wandBusy = true;
+  cv.style.cursor = "progress";
+  const t0 = performance.now();
+  try{
+    const j = await api("/wand", {x: ix, y: iy, tol: wandTol});
+    if(!j.polygon || j.polygon.length < 3){
+      toast("未选出区域，试试调大容差", true);
+    } else {
+      selRegion = {kind: "poly", pts: j.polygon, area_px: j.area_px};
+      updateSelBar();
+      render();
+      const ms = Math.round(performance.now() - t0);
+      toast(`魔棒选出 ${j.area_px.toLocaleString()} px（${j.n} 顶点 · ${ms}ms）`
+            + (j.partial ? " · 触到计算窗口上限" : ""));
+    }
+  }catch(e){ toast("魔棒失败: " + e.message, true); }
+  wandBusy = false;
+  cv.style.cursor = "";
+}
+$("selClear").onclick = () => { clearSelRegion(); render(); };
+$("selToParcel").onclick = () => {
+  const pts = regionPts();
+  if(!pts || pts.length < 3){ toast("选区无效", true); return; }
+  snapVec(); pushAction("vector");
+  const id = nextId();
+  parcels.push({id, cls: activeCls, pts});
+  sel = parcels.length - 1;
+  setVecDirty(true);
+  clearSelRegion();
+  refreshAll(); render();
+  toast(`已由选区生成田块 #${id} · ${clsName(activeCls)}`);
+};
+$("selToMask").onclick = async () => {
+  const pts = regionPts();
+  if(!pts || pts.length < 3){ toast("选区无效", true); return; }
+  const ring = pts.map(([x,y]) => geoFromImg(x, y));
+  ring.push(ring[0].slice());
+  try{
+    setSave("saving", "保存中…");
+    const j = await api("/bake", {
+      features: [{type: "Feature", properties: {cls: activeCls},
+                  geometry: {type: "Polygon", coordinates: [ring]}}],
+      cls: activeCls
+    });
+    pushAction("mask");
+    applyMaskStats(j.stats);
+    bumpOverlay();
+    markSaved();
+    clearSelRegion();
+    render();
+    toast(`选区已涂进「${clsName(activeCls)}」（${j.count} 个多边形）`);
+  }catch(e){
+    toast("涂入失败: " + e.message, true);
+    setSave("err", "保存失败");
+  }
+};
+$("wandTol").oninput = e => {
+  wandTol = +e.target.value;
+  $("wandTolVal").textContent = wandTol;
+};
+
+/* ==================================================================
+   工具栏绑定
+================================================================== */
+$("mSelect").onclick = () => setMode("select");
+$("mDraw").onclick   = () => setMode("draw");
+$("mBrush").onclick  = () => setMode("brush");
+$("mErase").onclick  = () => setMode("erase");
+$("mRect").onclick   = () => setMode("rect");
+$("mEllipse").onclick= () => setMode("ellipse");
+$("mLasso").onclick  = () => setMode("lasso");
+$("mWand").onclick   = () => setMode("wand");
+$("btnUndo").onclick = undo;
+$("btnRedo").onclick = redo;
+$("btnDel").onclick  = deleteSelected;
+$("btnSave").onclick = saveNow;
+$("btnGeo").onclick  = downloadGeoJSON;
+$("btnTif").onclick  = exportTif;
+$("btnCsv").onclick  = exportCsv;
+$("btnFit").onclick  = fitAllParcels;
+$("btnBake").onclick = bakeParcels;
+$("btnHelp").onclick = () => toggleModalOr("modalHelp");
+$("helpClose").onclick = closeAllModals;
+$("btnClearVec").onclick = () => {
+  if(!parcels.length) return;
+  if(confirm(`确定清空全部 ${parcels.length} 个田块？`)){
+    snapVec(); pushAction("vector");
+    parcels = []; sel = -1; setVecDirty(true); refreshAll(); render();
+  }
+};
+$("btnClearMask").onclick = clearMask;
+$("userbar").onclick = () => { if(ME) openUserModal(false); };
+$("userbar").onkeydown = e => {
+  if(e.key === "Enter" || e.key === " "){ e.preventDefault(); if(ME) openUserModal(false); }
+};
+$("combo").onchange = e => {
+  combo = e.target.value;
+  $("bandSel").style.display = combo === "gray" ? "" : "none";
+  grayBand = +$("bandSel").value || 1;
+  if(combo === "custom" && !ADJ.expr){
+    toast("尚未设置波段表达式：打开「🎛 图像处理」输入并应用", true);
+  }
+  baseCache.clear(); basePending.clear(); render();
+};
+$("bandSel").onchange = e => {
+  grayBand = +e.target.value;
+  baseCache.clear(); basePending.clear(); render();
+};
+$("ovShow").onchange = e => { ovShow = e.target.checked; render(); };
+$("brushSize").oninput = e => setBrush(+e.target.value);
+$("autosave").onchange = e => {
+  autosave = e.target.checked;
+  if(autosave && vecDirty) scheduleVecSave();
+  toast(autosave ? "已开启自动保存" : "已关闭自动保存（记得手动 Ctrl+S）");
+};
+document.addEventListener("click", e => {
+  const chip = e.target.closest("#classbar .cchip");
+  if(chip) setActiveCls(chip.dataset.id);
+});
+/* 键盘可达性：role=button 的行/项支持 Enter / 空格 */
+document.addEventListener("keydown", e => {
+  if(e.key !== "Enter" && e.key !== " ") return;
+  const el = e.target && e.target.closest ? e.target.closest('[role="button"]') : null;
+  if(!el) return;
+  e.preventDefault();
+  if(el.dataset && el.dataset.dir !== undefined){ el.click(); browse(decodeURIComponent(el.dataset.dir)); }
+  else if(el.dataset && el.dataset.file !== undefined){ el.click(); doOpen(decodeURIComponent(el.dataset.file)); }
+  else el.click();
+});
+document.querySelectorAll(".modalhost, #modalClass, #modalHelp, #modalImg").forEach(m => {
+  m.addEventListener("click", e => { if(e.target === m) closeAllModals(); });
+});
+window.addEventListener("resize", resize);
+window.addEventListener("beforeunload", e => {
+  if(vecDirty){ e.preventDefault(); e.returnValue = ""; }
+});
+setInterval(() => { if(autosave && vecDirty){ saveVec(); } }, 20000);
+/* 选区蚂蚁线动画 */
+setInterval(() => { if(selRegion || marquee || lassoPts) render(); }, 150);
+
+/* ==================================================================
+   图像处理（显示调整 / 多光谱 / 几何变换）
+================================================================== */
+const ADJ_RESET = {brightness:1, contrast:1, saturation:1, gamma:1, sharpen:0, wb:0, lo:2, hi:98};
+
+function syncAdjForm(){
+  const f = (id, v) => { const el = $(id); if(el) el.value = v; };
+  f("aBright", ADJ.brightness);  $("vBright").textContent  = (+ADJ.brightness).toFixed(2);
+  f("aContrast", ADJ.contrast);  $("vContrast").textContent = (+ADJ.contrast).toFixed(2);
+  f("aSat", ADJ.saturation);     $("vSat").textContent      = (+ADJ.saturation).toFixed(2);
+  f("aSharp", ADJ.sharpen);      $("vSharp").textContent    = (+ADJ.sharpen).toFixed(1);
+  f("aGamma", ADJ.gamma);        $("vGamma").textContent    = (+ADJ.gamma).toFixed(2);
+  $("aWb").checked = !!ADJ.wb;
+  f("aLo", ADJ.lo); f("aHi", ADJ.hi);
+  $("exprInput").value = ADJ.expr || "";
+}
+let adjTimer = null;
+function pushAdj(partial){
+  Object.assign(ADJ, partial);
+  clearTimeout(adjTimer);
+  adjTimer = setTimeout(async () => {
+    try{
+      const j = await api("/adj", {adj: {...ADJ}});
+      ADJ = j.adj || ADJ;
+      baseCache.clear(); basePending.clear();
+      render();
+    }catch(e){
+      toast("调整失败: " + e.message, true);
+      syncAdjForm();
+    }
+  }, 300);
+}
+[["aBright","brightness","vBright",2], ["aContrast","contrast","vContrast",2],
+ ["aSat","saturation","vSat",2], ["aSharp","sharpen","vSharp",1],
+ ["aGamma","gamma","vGamma",2]].forEach(([id, key, vid, dp]) => {
+  $(id).oninput = e => {
+    const v = +e.target.value;
+    $(vid).textContent = v.toFixed(dp);
+    pushAdj({[key]: v});
+  };
+});
+$("aWb").onchange = e => pushAdj({wb: e.target.checked ? 1 : 0});
+["aLo","aHi"].forEach(id => {
+  $(id).onchange = () => pushAdj({lo: +$("aLo").value, hi: +$("aHi").value});
+});
+$("aReset").onclick = () => {
+  Object.assign(ADJ, ADJ_RESET);
+  syncAdjForm();
+  pushAdj({});
+  toast("显示调整已重置");
+};
+$("exprApply").onclick = () => {
+  const v = $("exprInput").value.trim();
+  pushAdj({expr: v});
+  if(v){
+    setTimeout(() => {
+      combo = "custom";
+      $("combo").value = "custom";
+      baseCache.clear(); basePending.clear();
+      render();
+      toast("表达式已应用，已切到「自定义波段式」");
+    }, 420);
+  } else {
+    toast("已清空表达式");
+  }
+};
+document.querySelectorAll("#modalImg [data-expr]").forEach(b => {
+  b.onclick = () => {
+    $("exprInput").value = b.dataset.expr;
+    $("exprApply").click();
+  };
+});
+$("btnImg").onclick = () => toggleModalOr("modalImg");
+$("imgClose").onclick = closeAllModals;
+$("mText").onclick = () => setMode("text");
+
+/* -- 几何变换 -- */
+async function doDerive(kind){
+  if(!INFO) return;
+  const ow = INFO.width, oh = INFO.height;
+  let rect = null;
+  if(kind === "crop"){
+    const pts = regionPts();
+    if(!pts || pts.length < 3){ toast("请先用选框/套索/魔棒画出裁剪范围", true); return; }
+    let x0=1e18, y0=1e18, x1=-1e18, y1=-1e18;
+    pts.forEach(([x,y]) => { x0=Math.min(x0,x); y0=Math.min(y0,y); x1=Math.max(x1,x); y1=Math.max(y1,y); });
+    rect = {x: Math.max(0, Math.floor(x0)), y: Math.max(0, Math.floor(y0)),
+            w: 0, h: 0};
+    rect.w = Math.min(ow, Math.ceil(x1)) - rect.x;
+    rect.h = Math.min(oh, Math.ceil(y1)) - rect.y;
+    if(rect.w < 8 || rect.h < 8){ toast("选区太小，无法裁剪", true); return; }
+    if(!confirm(`裁剪到选区外接矩形（${rect.w}×${rect.h}）：\n将生成新文件并打开，原图不变，现有标注自动换算。继续？`)) return;
+  } else {
+    const names = {rot90:"顺时针 90°", rot90ccw:"逆时针 90°", rot180:"旋转 180°",
+                   fliph:"水平翻转", flipv:"垂直翻转"};
+    if(!confirm(`「${names[kind]}」：将生成新文件并打开，原图不变，现有标注自动换算。继续？`)) return;
+  }
+  const mapPt = (x, y) => {
+    switch(kind){
+      case "crop":    return [x - rect.x, y - rect.y];
+      case "rot90":   return [oh - 1 - y, x];
+      case "rot90ccw":return [y, ow - 1 - x];
+      case "rot180":  return [ow - 1 - x, oh - 1 - y];
+      case "fliph":   return [ow - 1 - x, y];
+      case "flipv":   return [x, oh - 1 - y];
+      default:        return [x, y];
+    }
+  };
+  setSave("saving", "几何变换中…");
+  try{
+    const j = await api("/derive", rect ? {kind, ...rect} : {kind});
+    /* 先换算标注，再切换场景信息 */
+    parcels.forEach(p => { p.pts = p.pts.map(([x,y]) => mapPt(x,y)); });
+    texts.forEach(t => { const [nx, ny] = mapPt(t.x, t.y); t.x = nx; t.y = ny; });
+    applyInfo(j.info);
+    applyMaskStats(j.mask);
+    clearSelRegion(); sel = -1; selText = -1; drawing = null; stroke = null;
+    clearTiles();
+    refreshAll(); fitView(); setMode("select");
+    setVecDirty(true);                     /* 触发自动保存到新文件 */
+    markSaved();
+    toast(`已生成并打开 ${j.info.name}（标注已换算）`);
+  }catch(e){
+    toast("处理失败: " + e.message, true);
+    setSave("err", "失败");
+  }
+}
+$("gCrop").onclick    = () => { closeAllModals(); doDerive("crop"); };
+$("gRot90").onclick   = () => { closeAllModals(); doDerive("rot90"); };
+$("gRot90ccw").onclick= () => { closeAllModals(); doDerive("rot90ccw"); };
+$("gRot180").onclick  = () => { closeAllModals(); doDerive("rot180"); };
+$("gFlipH").onclick   = () => { closeAllModals(); doDerive("fliph"); };
+$("gFlipV").onclick   = () => { closeAllModals(); doDerive("flipv"); };
+
+/* ==================================================================
+   多人协作：身份 / 轮询 / 远程光标 / 事件
+================================================================== */
+function loadIdentity(){
+  try{
+    const s = JSON.parse(localStorage.getItem("pa_user") || "null");
+    if(s && s.id){ ME = s; return true; }
+  }catch(e){}
+  return false;
+}
+function saveIdentity(){
+  try{ localStorage.setItem("pa_user", JSON.stringify(ME)); }catch(e){}
+}
+function ensureIdentity(cb){
+  if(loadIdentity()){ startCollab(); cb && cb(); return; }
+  ME = {id: "u" + Math.random().toString(36).slice(2, 10),
+        name: "访客" + Math.floor(Math.random() * 900 + 100),
+        color: UCOLORS[Math.floor(Math.random() * UCOLORS.length)]};
+  openUserModal(true, cb);
+}
+function openUserModal(first, cb){
+  $("userTitle").textContent = first ? "欢迎，先起个名字" : "修改协作身份";
+  $("userName").value = ME ? ME.name : "";
+  renderColorPicker();
+  const ok = $("userOk"), skip = $("userSkip");
+  skip.style.display = first ? "none" : "";
+  const done = save => {
+    if(save){
+      const v = ($("userName").value || "").trim();
+      if(v) ME.name = v.slice(0, 16);
+      saveIdentity();
+    }
+    cleanup();
+    $("modalUser").style.display = "none";
+    startCollab();
+    cb && cb();
+  };
+  const onKey = e => { if(e.key === "Enter") done(true); };
+  const cleanup = () => { ok.onclick = null; skip.onclick = null;
+    $("userName").onkeydown = null; };
+  ok.onclick = () => done(true);
+  skip.onclick = () => done(false);
+  $("userName").onkeydown = onKey;
+  $("modalUser").style.display = "flex";
+  setTimeout(() => $("userName").focus(), 60);
+}
+function renderColorPicker(){
+  const el = $("userColors");
+  el.innerHTML = UCOLORS.map(c =>
+    `<i data-c="${c}" class="${ME && ME.color === c ? "on" : ""}" style="background:${c}"></i>`).join("");
+  el.onclick = e => {
+    const i = e.target.closest("i[data-c]");
+    if(!i) return;
+    ME.color = i.dataset.c;
+    renderColorPicker();
+    renderUserBar();
+    startCollab(true);              // 立即把新颜色同步出去
+  };
+}
+function renderUserBar(){
+  const el = $("userbar");
+  if(!el) return;
+  if(!RUSERS.length){
+    el.innerHTML = `<span class="ufirst">${ME ? escapeHtml(ME.name) : "单机"}</span>`;
+    return;
+  }
+  const shown = RUSERS.slice(0, 6);
+  el.innerHTML = shown.map(u => {
+    const ini = escapeHtml((u.name || "?").trim().charAt(0) || "?");
+    const meCls = ME && u.id === ME.id ? " me" : "";
+    return `<span class="uav${meCls}" style="background:${u.color || "#4f8cff"}"
+      title="${escapeHtml(u.name || u.id)}">${ini}<span class="dot"></span></span>`;
+  }).join("") +
+  (RUSERS.length > 6 ? `<span class="ucnt">+${RUSERS.length - 6}</span>` : "") +
+  `<span class="ucnt">${RUSERS.length}人</span>`;
+}
+/* ---- 事件浮层 ---- */
+function evtLog(text, color){
+  const el = $("evtlog");
+  if(!el) return;
+  const d = document.createElement("div");
+  d.className = "ev";
+  d.style.borderLeftColor = color || "var(--accent)";
+  d.textContent = text;
+  el.appendChild(d);
+  while(el.children.length > 5) el.removeChild(el.firstChild);
+  setTimeout(() => d.classList.add("fade"), 4200);
+  setTimeout(() => { if(d.parentNode) d.parentNode.removeChild(d); }, 4800);
+}
+/* ---- 远程光标（画布内 DOM 元素，位置随视图换算） ---- */
+const rcEls = new Map();           // client -> element
+function renderRemoteCursors(){
+  const stage = $("stage");
+  if(!stage) return;
+  const live = new Set();
+  if(INFO && RUSERS.length){
+    for(const u of RUSERS){
+      if(ME && u.id === ME.id) continue;
+      if(!u.cursor || u.cursor.length < 2) continue;
+      const [sx, sy] = toScr([u.cursor[0], u.cursor[1]]);
+      if(sx < -60 || sy < -60 || sx > W + 60 || sy > H + 60) continue;
+      live.add(u.id);
+      let el = rcEls.get(u.id);
+      if(!el){
+        el = document.createElement("div");
+        el.className = "rcursor";
+        el.innerHTML = `<div class="ring"></div><div class="rlb"><span></span></div>`;
+        stage.appendChild(el);
+        rcEls.set(u.id, el);
+      }
+      el.style.color = u.color || "#4f8cff";
+      el.style.left = sx + "px";
+      el.style.top = sy + "px";
+      el.querySelector("span").textContent = u.name || "";
+    }
+  }
+  for(const [cid, el] of rcEls){
+    if(!live.has(cid)){ if(el.parentNode) el.parentNode.removeChild(el); rcEls.delete(cid); }
+  }
+}
+/* ---- 远端标签图刷新（节流） ---- */
+function scheduleMaskRefresh(){
+  clearTimeout(maskRefTimer);
+  maskRefTimer = setTimeout(async () => {
+    if(!INFO) return;
+    try{
+      const j = await api("/maskinfo");
+      if(j.mask){ applyMaskStats(j.mask); bumpOverlay(); render(); }
+    }catch(e){}
+  }, 700);
+}
+/* ---- 处理服务端事件 ---- */
+async function handleEvents(events){
+  if(!events || !events.length) return;
+  for(const ev of events){
+    const mine = ME && ev.client === ME.id;
+    const who = ev.name || "对方";
+    const d = ev.data || {};
+    if(ev.type === "save"){
+      if(mine) continue;
+      if(d.rev != null && d.rev > vecRev){
+        if(vecDirty){
+          pendingRemote = true;
+          setSave("dirty", "未保存·远端已更新");
+        }else{
+          vecRev = d.rev;
+          refreshParcels(false);
+        }
+      }
+      if(!mine) evtLog(`${who} 保存了标注`, "#4f8cff");
+    }else if(ev.type === "stroke" || ev.type === "clear" || ev.type === "bake"){
+      if(!mine){ scheduleMaskRefresh(); evtLog(
+        ev.type === "stroke" ? `${who} 涂抹了一笔` :
+        ev.type === "clear" ? `${who} 清空了涂抹` : `${who} 栅格化了田块`,
+        ev.type === "clear" ? "#ef4444" : "#3ecf8e"); }
+    }else if(ev.type === "undo" || ev.type === "redo"){
+      if(!mine) scheduleMaskRefresh();
+    }else if(ev.type === "join"){
+      if(!mine){ evtLog(`${who} 加入了标注`, "#3ecf8e"); renderUserBar(); }
+    }else if(ev.type === "leave"){
+      evtLog(`${who} 离开了`, "#ffb454"); renderUserBar();
+    }else if(ev.type === "classes"){
+      if(!mine){
+        try{
+          const j = await api("/classes");
+          CLASSES = (j.classes || []).map(c => ({...c, hidden:false}));
+          if(!clsById(activeCls) && CLASSES.length) activeCls = CLASSES[0].id;
+          refreshAll(); render();
+          evtLog(`${who} 更新了类别表`, "#a78bfa");
+        }catch(e){}
+      }
+    }else if(ev.type === "open" || ev.type === "derive"){
+      if(!mine){
+        evtLog(`${who} ${ev.type === "open" ? "切换了影像" : "执行了几何变换"}（${d.name || d.kind || ""}）`, "#ffb454");
+        toast(`${who} 切换了影像/几何变换，页面将刷新…`);
+        setTimeout(() => location.reload(), 1400);
+      }
+    }
+  }
+}
+/* ---- 轮询：身份心跳 + 增量事件 + 光标上报 ---- */
+let collabTimer = null;
+function startCollab(force){
+  if(!ME) return;
+  if(collabTimer && !force) return;
+  tickCollab();
+  if(!collabTimer) collabTimer = setInterval(tickCollab, 1400);
+}
+async function tickCollab(){
+  if(!ME || collabBusy) return;
+  collabBusy = true;
+  try{
+    let cur = null;
+    if(INFO && mouse){
+      const [ix, iy] = toImg(mouse[0], mouse[1]);
+      cur = [+ix.toFixed(1), +iy.toFixed(1)];
+    }
+    const j = await api("/users", {since: seq, cursor: cur});
+    seq = j.seq || seq;
+    if(j.rev != null && collabInited && j.rev > vecRev && !vecDirty){
+      vecRev = j.rev;
+      refreshParcels(false);
+    }
+    const prevN = RUSERS.length;
+    RUSERS = j.users || [];
+    if(RUSERS.length !== prevN) renderUserBar();
+    renderRemoteCursors();
+    await handleEvents(j.events);
+    collabInited = true;
+  }catch(e){ /* 服务端不可达时静默，自动重试 */ }
+  collabBusy = false;
+}
+window.addEventListener("beforeunload", () => {
+  if(ME){
+    try{
+      fetch("/users", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({client: ME.id, name: ME.name, action: "leave"}),
+        keepalive: true});
+    }catch(e){}
+  }
+});
+
+/* ==================================================================
+   启动
+================================================================== */
+(async function boot(){
+  setBrush(14);
+  ensureIdentity();
+  renderUserBar();
+  try{
+    const j = await api("/info");
+    CLASSES = (j.classes || []).map(c => ({...c, hidden:false}));
+    if(CLASSES.length) activeCls = CLASSES[0].id;
+    if(j.adj){ Object.assign(ADJ, j.adj); syncAdjForm(); }
+    renderClasses(); renderStats();
+    resize();
+    browseCur = j.last_dir || "";
+    if(j.scene){
+      applyInfo(j.scene);
+      applyMaskStats(j.mask);
+      const labels = await api("/parcels");
+      applyParcelsFromGeo(labels);
+      if(labels && labels.rev != null) vecRev = labels.rev;
+      rebuildSynced();
+      refreshAll(); fitView(); setMode("select");
+      markReady();
+      toast(`已加载 ${j.scene.name}${parcels.length ? " · " + parcels.length + " 个田块" : ""}`);
+    } else {
+      setMode("select");
+      $("hint").innerHTML = '请点击左上角 <b>📂 打开文件</b> 选择要标注的影像';
+      browseCur = j.last_dir || "";
+    }
+  }catch(e){
+    toast("初始化失败: " + e.message, true);
+    resize();
+  }
+})();
+</script>
+</body>
+</html>
